@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Token created · Glassboard{% endblock %}
+{% block main %}
+<section class="card narrow"><h1>Token created</h1>
+  <p>This token for <strong>@{{ principal }}</strong> is shown once. Save it securely before leaving this page.</p>
+  <p><code class="token-once">{{ token }}</code></p>
+  <p class="muted">Scope: {{ scope }} · {{ 'Expires ' ~ expires[:16].replace('T',' ') ~ 'Z' if expires else 'No expiry' }}</p>
+  <p><a href="/admin?tab=credentials">Back to credentials</a></p>
+</section>
+{% endblock %}

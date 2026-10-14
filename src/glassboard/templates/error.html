@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ status_code }} · Glassboard{% endblock %}
+{% block main %}
+<section class="card error-page" role="alert">
+  <p class="eyebrow">Error {{ status_code }}</p>
+  <h1>{% if code == 'not_found' %}Page not found{% elif code == 'internal' %}Something went wrong{% else %}Request could not be completed{% endif %}</h1>
+  <p>{{ message }}</p>
+  <div class="error-actions"><a class="button" href="/">Go to sessions</a><a href="/docs">Open the guide</a></div>
+  <p class="muted small-text">Reference {{ request_id }}{% if retryable %} · You can try again shortly.{% endif %}</p>
+</section>
+{% endblock %}

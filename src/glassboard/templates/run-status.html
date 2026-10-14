@@ -1,0 +1,44 @@
+<section class="run-status card" aria-labelledby="run-status-title">
+  <div class="run-status-top">
+    <div><h2 id="run-status-title">Run status</h2><p><strong>{{ run_status.accepted }} of {{ run_status.total }}</strong> work tasks accepted <span class="muted">({{ run_status.percent }}%)</span></p></div>
+    <a href="/s/{{ sess.handle }}/progress">Open full progress</a>
+  </div>
+  {% if run_status.total %}<progress value="{{ run_status.accepted }}" max="{{ run_status.total }}" aria-label="accepted work tasks"></progress>{% endif %}
+  {% for parent in run_status.stale_parents %}
+  <div class="run-status-note"><strong>Coordination needs an update:</strong> <a href="/s/{{ sess.handle }}/t/{{ parent.task }}">T{{ parent.task }} · {{ parent.title }}</a> has no recent activity. Linked work:
+    {% for child in parent.children %}<a href="/s/{{ sess.handle }}/t/{{ child.task }}">T{{ child.task }} · {{ child.title }}</a> ({{ child.status.replace("_", " ") }}){% if not loop.last %}, {% endif %}{% endfor %}.
+  </div>
+  {% endfor %}
+  <div class="run-status-columns">
+    <details class="run-status-group" data-persist="current-work">
+      <summary>Current work <span class="count">{{ run_status.focus | length }}</span></summary>
+      <div class="run-status-group-body">
+      {% if not run_status.focus %}<p class="muted">No open work tasks.</p>{% endif %}
+      <ul>
+      {% for t in run_status.focus[:5] %}
+        <li><div class="run-status-task"><a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }} · {{ t.title }}</a><span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></div>
+          <p>{{ t.detail }}{% if t.age_min is not none and t.status in ("in_progress", "blocked") %} <span class="muted">· last task activity {{ t.age_min }}m ago</span>{% endif %}</p>
+          {% if t.target %}<p class="muted small-text">Target: {{ t.target }}</p>{% endif %}
+        </li>
+      {% endfor %}
+      </ul>
+      {% if run_status.focus | length > 5 %}<p class="muted small-text">{{ run_status.focus | length - 5 }} more work tasks on the Progress tab.</p>{% endif %}
+      </div>
+    </details>
+    <details class="run-status-group" data-persist="achieved-work">
+      <summary>Achieved <span class="count">{{ run_status.achieved | length }}</span></summary>
+      <div class="run-status-group-body">
+      {% if not run_status.achieved %}<p class="muted">No accepted work tasks yet.</p>{% endif %}
+      <ul>
+      {% for t in run_status.achieved[:3] %}
+        <li><div class="run-status-task"><a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }} · {{ t.title }}</a><span class="tag st st-done">done</span></div>
+          {% if t.by %}<p>By <span class="handle">@{{ t.by }}</span></p>{% endif %}
+          {% if t.result %}<p class="muted small-text">Result: {{ t.result }}</p>{% endif %}
+        </li>
+      {% endfor %}
+      </ul>
+      {% if run_status.achieved | length > 3 %}<p class="muted small-text">{{ run_status.achieved | length - 3 }} more accepted tasks on the Progress tab.</p>{% endif %}
+      </div>
+    </details>
+  </div>
+</section>

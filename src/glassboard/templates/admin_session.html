@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ sess.handle }} · Admin · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/admin">← Admin console</a>
+<section class="head">
+  <h1>{{ sess.handle }} <span class="tag state state-{{ sess.state }}">{{ sess.state }}</span></h1>
+  <p>{{ title }}</p>
+  <p class="meta">Head #{{ sess.head_seq }} · Epoch {{ sess.epoch }} · {{ "Autonomous" if sess.autonomous else "Human coordinated" }}</p>
+  {% if external %}<p class="note">Live read-only view from the agent board. Team actions stay on that board until the run finishes.</p>{% endif %}
+  {% if joined %}<p><a href="/s/{{ sess.handle }}">Open session workspace</a></p>{% endif %}
+</section>
+<section class="admin-inspect-board" aria-labelledby="admin-board-title">
+  <h2 id="admin-board-title">Board</h2>
+  <p class="muted small-text">Open a card's full details with the disclosure control.</p>
+  {% set allow_task_links = joined %}
+  {% include "kanban.html" %}
+</section>
+<div class="layout">
+  <section class="timeline">
+    <div class="timeline-title"><h2>Activity</h2><span>Latest {{ timeline|length }} events</span></div>
+    {% for ev in timeline %}
+    <div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{% if loop.first %}<span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span>{% endif %}<span>{{ ln.text }}</span></div>{% endfor %}</div>
+    {% else %}<p class="muted">No activity yet.</p>{% endfor %}
+    {% if older %}<p><a href="/admin/{% if source is not none %}external/{{ source }}/{% endif %}s/{{ sess.handle }}?before={{ older }}">Older events</a></p>{% endif %}
+  </section>
+  <aside>
+    <section class="card"><h2>Team</h2>
+      {% for m in members %}<p><span class="handle">@{{ m.handle }}</span> · {{ m.role }}{% if m.job_role %} · {{ m.job_role }}{% endif %}</p>
+      {% else %}<p class="muted">No current members.</p>{% endfor %}
+    </section>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/task-modal.js"></script>{% endblock %}

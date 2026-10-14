@@ -1,0 +1,56 @@
+<div class="kanban">
+{% for col in board.columns %}
+  <section class="column col-{{ col.status }}">
+    <h2>{{ col.label }} <span class="count">{{ board.counts[col.status] }}</span></h2>
+    {% if col.status == "done" and board.counts.done > col.tasks|length %}<p class="muted small-text">Showing latest {{ col.tasks|length }} of {{ board.counts.done }}.</p>{% endif %}
+    {% for t in col.tasks %}
+    <article class="kcard{{ ' stale' if t.stale else '' }}">
+      <div class="khead">{% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }}</a>{% else %}<strong>T{{ t.task }}</strong>{% endif %}
+        {% if t.claimant %}<span class="handle">@{{ t.claimant }}</span>{% elif t.assignee %}<span class="muted">for @{{ t.assignee }}</span>{% endif %}
+        {% if t.stale %}<span class="tag stale">stale</span>{% endif %}</div>
+      {% if t.assignment_stage in ("assigned", "acknowledged", "working") %}<p class="muted small-text">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment {{ t.assignment_age_s // 60 }}m · {% if t.assignee_synced_since_assignment %}synced{% else %}no sync since assignment{% endif %}{% endif %}</p>{% endif %}
+      <div class="ln inl">{{ t.title_line }}</div>
+      {% if t.progress %}<progress value="{{ t.progress.done }}" max="{{ t.progress.total }}"></progress>
+        <span class="muted small-text">{{ t.progress.done }}/{{ t.progress.total }} done</span>{% endif %}
+      {% if t.waiting_on %}<div class="waiting">waiting on {{ t.waiting_on.label }}{% if t.waiting_on.resolved %} <span class="tag">resolved</span>{% endif %}</div>{% endif %}
+      {% if t.child_statuses %}<div class="kchildren">Own task idle; linked work: {% for child in t.child_statuses %}{% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ child.task }}">T{{ child.task }} · {{ child.title }}</a>{% else %}T{{ child.task }} · {{ child.title }}{% endif %} ({{ child.status.replace("_", " ") }}){% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+      {% if t.note_line %}<div class="ln blk">{{ t.note_line }}</div>{% endif %}
+      <details class="kdetails">
+        <summary data-open-task="task-modal-{{ t.task }}">Show full task details</summary>
+        <dl>
+          <dt>Title</dt><dd>{{ t.title_full }}</dd>
+          <dt>Owner</dt><dd>{% if t.claimant %}@{{ t.claimant }}{% elif t.assignee %}assigned to @{{ t.assignee }}{% else %}unassigned{% endif %}</dd>
+          {% if t.reviewer %}<dt>Reviewer</dt><dd>@{{ t.reviewer }}</dd>{% endif %}
+          <dt>Deliverable</dt><dd>{{ t.deliverable_full }}</dd>
+          {% if t.summary_full %}<dt>Submitted result</dt><dd>{{ t.summary_full }}</dd>{% endif %}
+          {% if t.summary_needs_detail %}<dt>Handoff</dt><dd>Summary needs detail; review task history before acceptance.</dd>{% endif %}
+          {% if t.depends_on %}<dt>Dependencies</dt><dd>{% for dep in t.depends_on %}{% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ dep.task }}">T{{ dep.task }}</a>{% else %}T{{ dep.task }}{% endif %} ({{ dep.status }}){% if not loop.last %}, {% endif %}{% endfor %}</dd>{% endif %}
+          {% if t.note_full %}<dt>Latest note excerpt</dt><dd>{{ t.note_full }}</dd>{% endif %}
+        </dl>
+        {% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ t.task }}">Open complete task history</a>{% endif %}
+      </details>
+    </article>
+    <dialog class="task-modal" id="task-modal-{{ t.task }}" aria-labelledby="task-modal-title-{{ t.task }}">
+      <div class="task-modal-head">
+        <div><span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span><h2 id="task-modal-title-{{ t.task }}">T{{ t.task }} · {{ t.title_full }}</h2></div>
+        <form method="dialog"><button type="submit" class="secondary small" aria-label="Close task T{{ t.task }}">Close</button></form>
+      </div>
+      <dl class="task-modal-facts">
+        <dt>Owner</dt><dd>{% if t.claimant %}@{{ t.claimant }}{% elif t.assignee %}Assigned to @{{ t.assignee }}{% else %}Unassigned{% endif %}</dd>
+        {% if t.reviewer %}<dt>Reviewer</dt><dd>@{{ t.reviewer }}{% if t.review %} · {{ t.review.verdict }}{% endif %}</dd>{% endif %}
+        {% if t.parent %}<dt>Parent</dt><dd>T{{ t.parent }}</dd>{% endif %}
+        {% if t.children %}<dt>Child tasks</dt><dd>{{ t.children.done }}/{{ t.children.total }} done</dd>{% endif %}
+        {% if t.depends_on %}<dt>Dependencies</dt><dd>{% for dep in t.depends_on %}{% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ dep.task }}">T{{ dep.task }}</a>{% else %}T{{ dep.task }}{% endif %} ({{ dep.status }}){% if not loop.last %}, {% endif %}{% endfor %}</dd>{% endif %}
+        {% if t.waiting_on %}<dt>Waiting on</dt><dd>{{ t.waiting_on.label }}{% if t.waiting_on.resolved %} · resolved{% endif %}</dd>{% endif %}
+      </dl>
+      {% if t.scope_full %}<section><h3>Scope</h3><p class="task-modal-text">{{ t.scope_full }}</p></section>{% endif %}
+      <section><h3>Deliverable</h3><p class="task-modal-text">{{ t.deliverable_full }}</p></section>
+      {% if t.checklist_full %}<section><h3>Checklist</h3><ul class="task-modal-checklist">{% for item in t.checklist_full %}<li><span aria-hidden="true">{{ "✓" if item.done else "○" }}</span> {{ item.text }}</li>{% endfor %}</ul></section>{% endif %}
+      {% if t.summary_full %}<section><h3>Submitted result</h3><p class="task-modal-text">{{ t.summary_full }}</p>{% if t.summary_needs_detail %}<p class="muted">Summary needs detail; review task history before acceptance.</p>{% endif %}</section>{% endif %}
+      {% if t.note_full %}<section><h3>Latest note</h3><p class="task-modal-text">{{ t.note_full }}</p></section>{% endif %}
+      {% if allow_task_links %}<p class="task-modal-foot"><a href="/s/{{ sess.handle }}/t/{{ t.task }}">Open complete task history →</a></p>{% endif %}
+    </dialog>
+    {% endfor %}
+  </section>
+{% endfor %}
+</div>

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "errors.html" as errs %}
+{% block title %}My agents · Glassboard{% endblock %}
+{% block main %}
+<section class="head"><h1>My agents</h1><p class="muted">Each agent has its own identity under <span class="handle">@{{ viewer.p.handle }}</span>.</p></section>
+<nav class="subnav" aria-label="My agents sections">
+  <a class="tab{% if tab == 'agents' %} on{% endif %}" href="/agents?tab=agents"{% if tab == 'agents' %} aria-current="page"{% endif %}>Agents</a>
+  <a class="tab{% if tab == 'invitations' %} on{% endif %}" href="/agents?tab=invitations"{% if tab == 'invitations' %} aria-current="page"{% endif %}>Invitations</a>
+  <a class="tab{% if tab == 'tokens' %} on{% endif %}" href="/agents?tab=tokens"{% if tab == 'tokens' %} aria-current="page"{% endif %}>Access tokens</a>
+</nav>
+{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
+{% if tab == 'agents' %}
+<div class="section-head"><h2>Current agents</h2><button type="button" data-panel-open="new-agent-panel">New agent</button></div>
+<dialog id="new-agent-panel" class="side-panel" aria-labelledby="new-agent-title">
+  <div class="panel-head"><h2 id="new-agent-title">New agent</h2><button type="button" class="secondary" data-panel-close aria-label="Close new agent panel">×</button></div>
+  <form method="post" action="/agents" class="panel-form">
+    <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-new">
+    <label for="aname">Name</label><input id="aname" name="name" autocomplete="off" pattern="[a-z0-9\-]{1,32}" maxlength="32" placeholder="e.g. reviewer" required>
+    <p class="muted">This creates the agent identity. Use Invitations to give it session access.</p>
+    <button type="submit" name="action" value="create">Create agent</button>
+  </form>
+</dialog>
+{% if not agents %}<p class="empty">You have no agents yet.</p>{% endif %}
+{% for a in agents %}
+<details class="card agent agent-summary"><summary><strong class="handle">@{{ a.handle }}</strong> · {{ a.sessions|length }} session{{ '' if a.sessions|length == 1 else 's' }}{% if not a.active %} · deactivated{% endif %}</summary>
+  {% if a.sessions %}<ul class="compact-list">{% for so in a.sessions %}<li><a href="/s/{{ so.handle }}">{{ so.handle }}</a> · {{ so.title }}{% if so.last_seen_at %} · <span class="muted">seen {{ so.last_seen_at[:16].replace('T',' ') }}Z</span>{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Not in any session.</p>{% endif %}
+  <p class="muted">{{ a.live_tokens }} live token{{ '' if a.live_tokens == 1 else 's' }} · <a href="/agents?tab=tokens">Manage access tokens</a></p>
+</details>
+{% endfor %}
+{% elif tab == 'invitations' %}
+<section class="card agent"><h2>Invite an agent to a session</h2><p class="muted">Select a session you manage. The join code is shown once and expires after 15 minutes.</p>
+  {% for s in coord_sessions %}<details class="agent-invite"><summary>{{ s.handle }} <span class="tag state state-{{ s.state }}">{{ s.state }}</span></summary>
+    <form method="post" action="/s/{{ s.handle }}/invite" class="addagent">
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ s.recovery_id }}"><input type="hidden" name="op" value="{{ op }}-inv-{{ loop.index }}">
+      <label for="client-{{ loop.index }}">Agent client</label><select id="client-{{ loop.index }}" name="client">{% for k,c in join_clients.items() %}<option value="{{ k }}">{{ c.label }}</option>{% endfor %}</select>
+      <label for="agent-{{ loop.index }}">Agent name <span class="muted">(empty = client type)</span></label><input id="agent-{{ loop.index }}" name="agent" list="own-agents" autocomplete="off" pattern="[a-z0-9\-]{1,32}" maxlength="32" placeholder="e.g. claude, codex, reviewer">
+      <label for="irole-{{ loop.index }}">Access</label><select id="irole-{{ loop.index }}" name="role"><option value="member">Contributor: claims and does tasks</option><option value="coordinator">Task Manager: divides and assigns tasks</option><option value="observer">Viewer: reads only</option></select>
+      <button type="submit">Get a join code</button>
+    </form></details>{% else %}<p class="muted">No active session you manage is available.</p>{% endfor %}
+  <datalist id="own-agents">{% for a in agents %}<option value="{{ a.handle.split('/')[1] }}">{% endfor %}</datalist>
+</section>
+{% else %}
+<details class="card agent" id="own-tokens"><summary><strong>Your access tokens</strong> · {{ own_tokens|length }}</summary>
+  <form method="post" action="/agents/token" class="inline"><input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-self"><input type="hidden" name="principal" value="{{ viewer.p.handle }}">
+    <label>Scope <select name="scope"><option value="full">Full</option><option value="read">Read only</option></select></label><label>Expires in days <input type="number" name="expires_days" min="1" max="3650" value="30"></label><label>Label <input name="label" maxlength="64" placeholder="e.g. tablet"></label><button type="submit">Create token</button>
+  </form>
+  {% if own_tokens %}<table class="tokens"><thead><tr><th>Token</th><th>Scope</th><th>Label</th><th>Created</th><th></th></tr></thead><tbody>{% for t in own_tokens %}<tr><td><code>{{ t.id }}</code></td><td>{{ t.scope }}</td><td>{{ t.label }}</td><td>{{ t.created_at[:10] }}</td><td>{% if t.revoked_at %}<span class="muted">revoked</span>{% else %}<form method="post" action="/agents" class="inline"><input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-r{{ t.id }}"><input type="hidden" name="credential" value="{{ t.id }}"><button type="submit" name="action" value="revoke" class="small danger">Revoke</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+</details>
+{% for a in agents %}<details class="card agent"><summary><strong>@{{ a.handle }}</strong> · {{ a.live_tokens }} live token{{ '' if a.live_tokens == 1 else 's' }}</summary>
+  {% if a.active %}<form method="post" action="/agents/token" class="inline"><input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-t{{ loop.index }}"><input type="hidden" name="principal" value="{{ a.handle }}"><label>Scope <select name="scope"><option value="full">Full</option><option value="read">Read only</option></select></label><label>Expires in days <input type="number" name="expires_days" min="1" max="3650" value="30"></label><label>Label <input name="label" maxlength="64" placeholder="e.g. local CLI"></label><button type="submit">Create token</button></form>{% endif %}
+  {% if a.tokens %}<table class="tokens"><thead><tr><th>Token</th><th>Scope</th><th>Label</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody>{% for t in a.tokens %}<tr{% if t.revoked_at %} class="revoked"{% endif %}><td><code>{{ t.id }}</code></td><td>{{ t.scope }}</td><td>{{ t.label }}</td><td>{{ t.created_at[:10] }}</td><td>{{ t.last_used_at[:16].replace('T',' ') if t.last_used_at else 'never' }}</td><td>{% if t.revoked_at %}<span class="muted">revoked</span>{% else %}<form method="post" action="/agents" class="inline"><input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-r{{ t.id }}"><input type="hidden" name="credential" value="{{ t.id }}"><button type="submit" name="action" value="revoke" class="small danger">Revoke</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+</details>{% endfor %}
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/panels.js"></script>{% endblock %}

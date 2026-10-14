@@ -1,0 +1,36 @@
+<div class="observe-head">
+  <div><span class="observe-kicker">{{ "PREVIEW SNAPSHOT" if snapshot_preview and live else ("LIVE FOLLOW" if live else "RECORDED REPLAY") }}</span>
+    <h2>Event #{{ at }}{% if state.at_ts %} <small>{{ state.at_ts[:19].replace("T", " ") }}Z</small>{% endif %}</h2></div>
+  <div class="observe-controls">
+    {% if state.previous %}<a href="/s/{{ sess.handle }}/observe?at={{ state.previous }}" aria-label="Previous event">← Previous</a>{% endif %}
+    {% if state.next %}<a href="/s/{{ sess.handle }}/observe?at={{ state.next }}" aria-label="Next event">Next →</a>{% endif %}
+    <a href="/s/{{ sess.handle }}/observe">{{ "Snapshot head" if snapshot_preview else "Follow live" }}</a>
+    <a href="/s/{{ sess.handle }}/observe?at={{ at }}">Link to this moment</a>
+  </div>
+</div>
+<p class="observe-honesty">Replaying recorded events. Past connection and presence signals are not stored, so they are not shown. Dots mark substantive records; lease and runtime mechanics are hidden except when selected. Space between dots does not imply work.</p>
+{% set strip = state.strip %}{% set condensed = false %}{% include "observe-strip.html" %}
+<div class="observe-grid">
+  <section class="card observe-event"><h2>At this event</h2>
+    {% if state.selected_lines %}<div class="observe-quote">{% for line in state.selected_lines %}<div class="ln {{ line.cls }}">{{ line.text }}</div>{% endfor %}</div>
+    {% else %}<p class="muted">No event yet.</p>{% endif %}
+    <h3>Changed by this event</h3>
+    <ul>{% for change in state.changes %}<li>{{ change }}</li>{% else %}<li>No task state yet.</li>{% endfor %}</ul>
+  </section>
+  <aside class="card observe-obligations"><h2>Open at #{{ at }}</h2>
+    {% for task in state.pending_reviews %}<p><strong>T{{ task.num }} peer review</strong><br><span class="muted">Submitted; @{{ task.reviewer }} is the named reviewer. Derived from recorded submission and task metadata.</span></p>{% endfor %}
+    {% for blocker in state.human_blockers %}<p><strong>Blocker #{{ blocker.seq }}</strong><br><span class="muted">Addressed to {% for who in blocker.to %}@{{ who }}{% if not loop.last %}, {% endif %}{% endfor %}; no recorded reply or task resolution at this cursor.</span></p>{% endfor %}
+    {% if not state.pending_reviews and not state.human_blockers %}<p class="muted">No review request or human blocker detected by these rules.</p>{% endif %}
+  </aside>
+</div>
+<section class="card observe-state"><h2>Tasks at #{{ at }}</h2>
+  <div class="observe-table-wrap"><table><thead><tr><th>Task</th><th>Status</th><th>Claimant / assignee</th><th>Reviewer</th><th>Time in status</th></tr></thead><tbody>
+  {% for task in state.tasks %}<tr><td><strong>T{{ task.num }}</strong> · {{ task.title }}</td><td><span class="tag st st-{{ task.status }}">{{ task.status.replace("_", " ") }}</span></td>
+    <td>{% if task.claimant %}@{{ task.claimant }}{% elif task.assignee %}Assigned to @{{ task.assignee }}{% else %}-{% endif %}</td>
+    <td>{% if task.reviewer %}@{{ task.reviewer }}{% if task.review %} · {{ task.review.verdict }} #{{ task.review.seq }}{% endif %}{% else %}-{% endif %}</td>
+    <td>{{ task.status_minutes }} min since #{{ task.status_seq }}</td></tr>{% else %}<tr><td colspan="5">No tasks existed at this event.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<details class="card observe-bookmarks"><summary>Bookmarks · {{ state.bookmarks|length }}</summary>
+  <ul>{% for mark in state.bookmarks|reverse %}<li><a href="/s/{{ sess.handle }}/observe?at={{ mark.seq }}">#{{ mark.seq }} · {{ mark.ts[:19].replace("T", " ") }}Z · @{{ mark.actor }} · {{ mark.type }}</a></li>{% endfor %}</ul>
+</details>

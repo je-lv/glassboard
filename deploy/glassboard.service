@@ -1,0 +1,36 @@
+# Glassboard service (docs/deploy.md). Checked by scripts/deploy-check.sh (systemd-analyze verify);
+# not run under a real systemd PID 1 in the build environment.
+# TLS mode (default): the app listens on 127.0.0.1 only, Caddy terminates TLS on the LAN.
+# Plain-HTTP mode: see the override in docs/deploy.md ("Plain-HTTP mode").
+[Unit]
+Description=Glassboard coordination board
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=glassboard
+Group=glassboard
+WorkingDirectory=/opt/glassboard
+Environment=GLASSBOARD_DB=/var/lib/glassboard/glassboard.db
+Environment=GLASSBOARD_ALLOWED_HOSTS=board.lan
+# Optional MCP endpoint (needs requirements/mcp.lock installed): Environment=GLASSBOARD_MCP=1
+ExecStart=/opt/glassboard/.venv/bin/uvicorn glassboard.serve:app --host 127.0.0.1 --port 8080 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header --no-access-log
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/glassboard
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,50 @@
+services:
+  glassboard:
+    build: .
+    image: glassboard:0.1.0
+    network_mode: host
+    environment:
+      GLASSBOARD_INSECURE_HTTP: "1"
+    volumes:
+      - board_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  glassboard-cli:
+    build: .
+    image: glassboard:0.1.0
+    profiles: ["client"]
+    entrypoint: ["glassboard"]
+    command: ["--help"]
+    environment:
+      XDG_CONFIG_HOME: /client/config
+      XDG_STATE_HOME: /client/state
+    volumes:
+      - client_config:/client/config
+      - client_state:/client/state
+      - ./:/work
+    working_dir: /work
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  board_data:
+  client_config:
+  client_state:

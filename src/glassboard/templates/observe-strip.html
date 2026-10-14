@@ -1,0 +1,17 @@
+{% if condensed %}<details class="card observe-strip-fold" data-persist="run-strip"><summary>Show run strip <span class="muted">· {{ strip.marks|length }} visible records, mechanics hidden</span></summary>{% endif %}
+<div class="observe-strip-wrap" aria-label="Recorded events by participant over linear time">
+  {% if strip.marks %}
+  <svg class="observe-strip" viewBox="0 0 900 {{ strip.height }}" role="img" aria-label="Linear-time event strip; every mark links to its event">
+    {% for lane in strip.lanes %}<text x="8" y="{{ lane.y + 4 }}" class="strip-label strip-{{ lane.color }}">{{ lane.handle }}</text><line x1="130" y1="{{ lane.y }}" x2="870" y2="{{ lane.y }}" class="strip-guide"/>{% endfor %}
+    {% if strip.cursor_x is not none %}<line x1="{{ strip.cursor_x }}" y1="22" x2="{{ strip.cursor_x }}" y2="{{ strip.height - 32 }}" class="strip-cursor"/>{% endif %}
+    {% for mark in strip.marks %}<a href="/s/{{ sess.handle }}/observe?at={{ mark.seq }}" aria-label="Event {{ mark.seq }}, {{ mark.actor }}, {{ mark.type }}">
+      <title>#{{ mark.seq }} · {{ mark.ts }} · {{ mark.actor }} · {{ mark.type }}</title>
+      {% if mark.human %}<rect x="{{ mark.x - (5 if mark.key else 2) }}" y="{{ mark.y - (5 if mark.key else 2) }}" width="{{ 10 if mark.key else 4 }}" height="{{ 10 if mark.key else 4 }}" class="strip-mark strip-human{% if mark.future %} strip-future{% endif %}{% if mark.selected %} strip-selected{% endif %}"/>
+      {% else %}<circle cx="{{ mark.x }}" cy="{{ mark.y }}" r="{{ 5 if mark.key else 2 }}" class="strip-mark strip-{{ mark.color }}{% if mark.future %} strip-future{% endif %}{% if mark.selected %} strip-selected{% endif %}"/>{% endif %}
+    </a>{% endfor %}
+    <text x="130" y="{{ strip.height - 7 }}" class="strip-axis">{{ strip.start[:16].replace("T", " ") }}Z</text>
+    <text x="870" y="{{ strip.height - 7 }}" text-anchor="end" class="strip-axis">{{ strip.end[:16].replace("T", " ") }}Z</text>
+  </svg>
+  {% else %}<p class="muted">No recorded events yet.</p>{% endif %}
+</div>
+{% if condensed %}<p class="muted small-text"><a href="/s/{{ sess.handle }}/observe">Open Observe for event details and replay</a></p></details>{% endif %}

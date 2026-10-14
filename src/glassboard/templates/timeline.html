@@ -1,0 +1,20 @@
+<div class="timeline-title"><h2>Activity</h2><nav class="timeline-order" aria-label="Activity order">
+  <a href="/s/{{ sess.handle }}/trace">Forensic trace</a>
+  <a href="/s/{{ sess.handle }}?{{ oldest_query }}"{% if order == "oldest" %} aria-current="true"{% endif %}>oldest <span aria-hidden="true">→</span> newest</a>
+  <a href="/s/{{ sess.handle }}?{{ newest_query }}"{% if order == "newest" %} aria-current="true"{% endif %}>newest <span aria-hidden="true">→</span> oldest</a>
+</nav></div>
+<div class="timeline-key" aria-label="Activity color key">
+  <span><i class="key-dot key-session" aria-hidden="true"></i>Session</span>
+  <span><i class="key-dot key-member" aria-hidden="true"></i>Team / new task</span>
+  <span><i class="key-dot key-progress" aria-hidden="true"></i>Task activity</span>
+  <span><i class="key-dot key-review" aria-hidden="true"></i>Submit / review / return</span>
+  <span><i class="key-dot key-done" aria-hidden="true"></i>Accepted</span>
+  <span><i class="key-dot key-danger" aria-hidden="true"></i>Blocked / cancelled</span>
+  <span><i class="key-dot key-system" aria-hidden="true"></i>System</span>
+  <span><i class="key-dot key-message" aria-hidden="true"></i>Message / other</span>
+</div>
+{% if not timeline %}<p class="muted">Nothing here yet.</p>{% endif %}
+{% for ev in timeline %}
+<div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{% if loop.first %}<span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span>{% endif %}<span>{{ ln.text }}</span></div>{% endfor %}
+{% if ev.type == "proposal" and can_coordinate %}<a class="act" href="/s/{{ sess.handle }}/new-task?from={{ ev.seq }}">make a task from #{{ ev.seq }}</a>{% endif %}</div>
+{% endfor %}

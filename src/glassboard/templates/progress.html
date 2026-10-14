@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ sess.handle }} progress · Glassboard{% endblock %}
+{% block main %}
+<section class="head">
+  <h1><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> · progress <span class="tag state state-{{ sess.state }}">{{ sess.state }}</span></h1>
+  <p class="note">Task status and milestones come from the session record. Text supplied by participants is shown as data.</p>
+</section>
+<nav class="subnav" aria-label="session">
+  <a class="tab" href="/s/{{ sess.handle }}">Timeline</a>
+  <a class="tab" href="/s/{{ sess.handle }}/board">Board</a>
+  <a class="tab on" href="/s/{{ sess.handle }}/progress" aria-current="page">Progress</a>
+  <a class="tab" href="/s/{{ sess.handle }}/artifacts">Artifacts</a>
+  {% if experimental_ui %}<a class="tab" href="/s/{{ sess.handle }}/observe">Observe</a>{% endif %}
+</nav>
+<section class="progress-global card" aria-labelledby="overall-progress-title">
+  <div><h2 id="overall-progress-title">Overall progress</h2><p><strong>{{ overall.accepted }} of {{ overall.total }}</strong> work tasks accepted <span class="muted">({{ overall.percent }}%)</span></p></div>
+  {% if overall.total %}<progress value="{{ overall.accepted }}" max="{{ overall.total }}" aria-label="accepted work tasks"></progress>{% endif %}
+  <p class="muted small-text">Counts tasks with no children, so coordination tasks are not counted twice.</p>
+</section>
+<section class="progress-overview card" aria-label="task status counts">
+  {% for status, count in counts.items() %}
+  <div><strong>{{ count }}</strong><span class="tag st st-{{ status }}">{{ status.replace("_", " ") }}</span></div>
+  {% endfor %}
+</section>
+<section aria-labelledby="contributors-title">
+  <h2 id="contributors-title">Who is doing what</h2>
+  {% if not contributors %}<p class="muted">No work assigned yet.</p>{% endif %}
+  <div class="progress-contributors">
+  {% for person in contributors %}
+    <article class="card">
+      <h3><span class="handle">@{{ person.handle }}</span> <span class="muted small-text">{{ person.accepted }} accepted</span></h3>
+      <ul>
+      {% for t in person.tasks %}<li><a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }} · {{ t.title }}</a> <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></li>{% endfor %}
+      </ul>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+<div class="progress-layout">
+  <section aria-labelledby="progress-work-title">
+    <h2 id="progress-work-title">Work by task</h2>
+    {% if not tasks %}<p class="muted">No tasks yet.</p>{% endif %}
+    {% for t in tasks %}
+    <article class="progress-task card">
+      <div class="progress-task-head"><a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }} · {{ t.title }}</a><span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></div>
+      <p class="progress-people">{% if t.claimant %}Claimed by <span class="handle">@{{ t.claimant }}</span>{% elif t.assignee %}Assigned to <span class="handle">@{{ t.assignee }}</span>{% else %}Unassigned{% endif %} · {{ t.assignment_stage }}{% if t.ack_overdue %} · acknowledgment overdue{% endif %}
+        {% if t.review %} · reviewed by <span class="handle">@{{ t.review.by }}</span>{% elif t.reviewer %} · reviewer <span class="handle">@{{ t.reviewer }}</span>{% endif %}</p>
+      {% if t.progress %}<progress value="{{ t.progress.done }}" max="{{ t.progress.total }}"></progress><span class="muted small-text">{{ t.progress.done }}/{{ t.progress.total }} checks complete</span>{% endif %}
+      {% if t.summary %}<p class="progress-summary"><strong>Result</strong> {{ t.summary }}</p>
+      {% if t.summary_needs_detail %}<p class="muted small-text">Summary needs detail; review the task history.</p>{% endif %}
+      {% elif t.deliverable %}<p class="progress-deliverable"><strong>Target</strong> {{ t.deliverable }}</p>{% endif %}
+      {% if t.children %}<p class="muted small-text">Linked tasks: {{ t.children.done }}/{{ t.children.total }} done</p>{% endif %}
+    </article>
+    {% endfor %}
+  </section>
+  <section aria-labelledby="progress-events-title">
+    <h2 id="progress-events-title">Milestones <span class="muted small-text">latest 100, oldest to newest</span></h2>
+    {% if not events %}<p class="muted">No milestones yet.</p>{% endif %}
+    <ol class="progress-events">
+    {% for e in events %}
+      <li class="progress-event" id="m{{ e.seq }}">
+        <div class="progress-event-head"><span class="tag">{{ e.label }}</span><span class="muted">#{{ e.seq }} · {{ e.time }}</span></div>
+        <p><span class="handle">@{{ e.actor }}</span>{% if e.task %} on <a href="/s/{{ sess.handle }}/t/{{ e.task }}">T{{ e.task }}</a>{% endif %}</p>
+        {% if e.detail %}<p class="progress-event-detail">{{ e.detail }}</p>{% endif %}
+        {% if e.task %}<a class="small-text" href="/s/{{ sess.handle }}/t/{{ e.task }}#e{{ e.seq }}">View event</a>{% endif %}
+      </li>
+    {% endfor %}
+    </ol>
+  </section>
+</div>
+{% endblock %}

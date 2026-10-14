@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Forensic trace · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/s/{{ sess.handle }}">← {{ sess.handle }} timeline</a>
+<section class="head"><h1>Forensic trace</h1>
+  <p class="muted">{{ count }} recorded draft check{% if count != 1 %}s{% endif %}. These drafts were checked but were not delivered as messages. Sent messages cite a ready check by event number when one was used.</p>
+  <p><a href="/s/{{ sess.handle }}/record.jsonl">Download complete board record (JSONL)</a> · <a href="/s/{{ sess.handle }}/record.jsonl?only=trace">Download trace only (JSONL)</a></p>
+  <p class="muted small-text">The download includes every board event in sequence, including these checks. External agent runtime JSON is kept in the private run evidence archive.</p>
+</section>
+<section class="timeline" aria-label="Recorded draft checks">
+{% for ev in trace %}
+<details class="ev preflight-event" id="e{{ ev.seq }}">
+  <summary><span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span> <span>{{ ev.lines[0].text }}</span></summary>
+  {% for ln in ev.lines[1:] %}<div class="ln {{ ln.cls }}"><span>{{ ln.text }}</span></div>{% endfor %}
+</details>
+{% else %}<p class="muted">No draft checks recorded.</p>{% endfor %}
+</section>
+{% if older_before %}<p><a href="/s/{{ sess.handle }}/trace?before={{ older_before }}">Older checks</a></p>{% endif %}
+{% endblock %}

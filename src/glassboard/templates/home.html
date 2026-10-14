@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "errors.html" as errs %}
+{% block main %}
+{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
+<div class="section-head"><h1>Needs your attention</h1> <button type="button" id="notify-enable" class="small" hidden>Notify me</button></div>
+{% if not attention %}<p class="empty">Nothing needs you right now.</p>{% endif %}
+<ul class="attention">
+{% for i in attention %}
+  <li><span class="tag">{{ i.label }}</span> <a href="/s/{{ i.session }}{% if i.task %}/t/{{ i.task }}{% elif i.kind == "proposal" %}/new-task?from={{ i.seq }}{% endif %}">{{ i.session }} {% if i.task %}T{{ i.task }}{% else %}#{{ i.seq }}{% endif %}</a>
+    {% if i.from %}<span class="muted">from @{{ i.from }}</span>{% endif %} <span class="muted">· {{ i.min }}m</span>
+    {% if i.kind == "unacknowledged" %}<span class="muted">· @{{ i.assignee }} · {% if i.assignee_synced_since_assignment %}synced, no acknowledgment{% else %}no board sync since assignment{% endif %}</span>{% endif %}
+    {% if i.title_line %}<div class="ln inl">{{ i.title_line }}</div>{% endif %}
+    {% if i.text_line %}<div class="ln inl">{{ i.text_line }}</div>{% endif %}
+    {% if i.kind == "proposal" %}<form method="post" action="/attention/{{ i.session }}/{{ i.seq }}/dismiss" class="inline">
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-d{{ i.seq }}">
+      <button type="submit" class="secondary small" aria-label="Dismiss proposal {{ i.seq }} in {{ i.session }}">Dismiss</button>
+    </form>{% endif %}
+    {% if i.kind == "approval" %}
+    <form method="post" action="/s/{{ i.session }}/approvals/{{ i.seq }}" class="inline">
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-a{{ i.seq }}">
+      <input name="note" maxlength="2000" placeholder="note (optional)" aria-label="note">
+      <button type="submit" name="decision" value="grant">Grant</button> <button type="submit" class="danger" name="decision" value="deny">Deny</button>
+    </form>{% endif %}</li>
+{% endfor %}
+</ul>
+<div class="section-head" id="session-list"><h1>Your sessions</h1><button type="button" data-panel-open="new-session-panel">New session</button></div>
+<dialog id="new-session-panel" class="side-panel" aria-labelledby="new-session-title">
+<div class="panel-head"><h2 id="new-session-title">New session</h2><button type="button" class="secondary" data-panel-close aria-label="Close new session panel">×</button></div>
+<form method="post" action="/new-session" class="panel-form newsession">
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-ns">
+  <div><label for="nsh">Handle</label>
+  <input id="nsh" name="handle" placeholder="handle, e.g. test2" pattern="[a-z][a-z0-9\-]{0,31}" maxlength="32" required></div>
+  <div><label for="nst">Goal</label>
+  <input id="nst" name="title" placeholder="goal, e.g. Second agent test" maxlength="200" required aria-label="title"></div>
+  <label class="session-option"><input type="checkbox" name="autonomous" value="1"><span><strong>Autonomous team</strong><small>Task Managers can complete peer-reviewed child tasks. A human accepts root tasks.</small></span></label>
+  <details><summary>Advanced settings</summary><label for="stale-after">Flag inactive task after (minutes)</label><input id="stale-after" name="stale_after_min" type="number" min="5" max="240" value="30"></details>
+  <button type="submit">Create session</button>
+</form>
+</dialog>
+{% if not sessions %}<p class="empty">You are not a member of any session yet.</p>{% endif %}
+{% if sessions %}
+<ul class="sessions">
+{% for s in sessions %}
+  {% if s.role == "coordinator" %}{% set access_style = "session-manager" %}{% set access_title = "Session Manager" %}
+  {% elif s.role == "member" %}{% set access_style = "contributor" %}{% set access_title = "Contributor" %}
+  {% else %}{% set access_style = "viewer" %}{% set access_title = "Viewer" %}{% endif %}
+  <li><div class="srow"><a href="/s/{{ s.session }}" class="sname">{{ s.session }}</a> <span class="tag role role-{{ access_style }}">{{ access_title }}</span> <span class="tag state state-{{ s.state }}">{{ s.state }}</span>{% if s.autonomous %} <span class="tag">autonomous</span>{% endif %}
+      <a href="/s/{{ s.session }}/board" class="muted small-text">board</a></div>
+      {% if s.o %}<div class="scounts muted"><span class="tag st st-open">open {{ s.o.counts.open }}</span> <span class="tag st st-in_progress">in progress {{ s.o.counts.in_progress }}</span> <span class="tag st st-blocked">blocked {{ s.o.counts.blocked }}</span> <span class="tag st st-review">review {{ s.o.counts.review }}</span> <span class="tag st st-done">done {{ s.o.counts.done }}</span>{% if s.o.stale %} <span class="tag stale">stale {{ s.o.stale }}</span>{% endif %}{% if s.o.owed %} <span class="tag">owed {{ s.o.owed }}</span>{% endif %}</div>
+      {% else %}<div class="scounts muted">epoch {{ s.epoch }} · head #{{ s.head }}</div>{% endif %}
+      <div class="ln inl">{{ s.title_line }}</div></li>
+{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/panels.js"></script>{% endblock %}

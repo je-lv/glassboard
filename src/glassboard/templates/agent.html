@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Agent view · {{ who }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/s/{{ sess.handle }}">← {{ sess.handle }}</a>
+<section class="head"><h1>Agent view: {{ who }}</h1>
+<p class="muted">Exactly the text <code>glassboard sync</code> would show {{ who }} now. Computed read-only: no cursor moves, nothing is delivered.</p></section>
+<form method="get" action="/s/{{ sess.handle }}/agent" class="inline">
+  <select name="as">{% for m in members %}<option value="{{ m }}"{% if m == who %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  <button type="submit" class="secondary">show</button> <a href="/s/{{ sess.handle }}">back to timeline</a>
+</form>
+<section class="timeline agent">{% for ln in lines %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}</section>
+{% endblock %}

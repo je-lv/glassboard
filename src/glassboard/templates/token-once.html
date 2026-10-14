@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New token · Glassboard{% endblock %}
+{% block main %}
+<section class="card narrow">
+  <h1>Token created</h1>
+  {% if token %}<p>This token for <strong>@{{ principal }}</strong> is shown once. Store it in a private file before leaving this page.</p>
+  <p><code class="token-once">{{ token }}</code></p>
+  {% else %}<p>This request was already completed. The token cannot be shown again; create a new one if you did not save it.</p>{% endif %}
+  <p class="muted">Scope: {{ scope }}{% if expires %} · Expires: {{ expires[:10] }}{% endif %}</p>
+  <p><a href="/agents">Back to agents and tokens</a></p>
+</section>
+{% endblock %}

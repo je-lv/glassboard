@@ -1,0 +1,31 @@
+{# Fixed messages for ?err=<code>. Text from the URL is never shown; unknown codes get the default. #}
+{% macro message(code) -%}
+{%- set m = {
+  "invalid": "That was not valid (kind, length or fields).",
+  "invalid_request": "That was not valid; check the fields.",
+  "invalid_preflight": "This message no longer matches its recorded draft check. Check it again.",
+  "recipient_not_member": "Some recipients are not members of this session.",
+  "forbidden": "You may not do that here (for example, only human Session Managers post decisions or manage tasks in the browser).",
+  "not_found": "Something you referred to does not exist.",
+  "rate_limited": "Too many requests; wait a moment.",
+  "payload_too_large": "That is larger than the board accepts.",
+  "idempotency_key_reused": "This form was already used for something else; reload the page.",
+  "invalid_transition": "The task or session cannot make that change from its current state.",
+  "version_conflict": "The task changed since this page was loaded; reload and try again.",
+  "submission_mismatch": "The task has a different current submission; reload before reviewing it.",
+  "checklist_incomplete": "Complete the checklist before submitting, or record an explicit incomplete-checklist reason.",
+  "session_paused": "The session is paused.",
+  "session_archived": "The session is archived.",
+  "secret_in_content": "That text contains a token or fence; remove it.",
+  "field_not_patchable": "Ownership and state cannot be edited; use reassign, cancel or reopen.",
+  "task_not_claimable": "That task cannot be claimed now.",
+  "dependency_cycle": "Those dependencies or that parent would form a cycle.",
+  "task_waiting": "That task depends on tasks that are not done yet.",
+  "already_resolved": "That was already decided.",
+  "handle_taken": "A session with that handle already exists or is reserved; pick another.",
+  "resource_held": "Someone already holds a lease on that resource.",
+  "archive_failed": "The workspace archive could not be created or verified.",
+  "purge_failed": "The workspace was not purged. Its state or verified archive may have changed.",
+  "confirmation_required": "Type the exact requested value and select the confirmation box."} -%}
+{{ m.get(code, "That did not work.") }}
+{%- endmacro %}

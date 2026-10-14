@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Add @{{ inv.agent }} · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/s/{{ sess.handle }}#team">← {{ sess.handle }}</a>
+<section class="head">
+  <h1>Add <span class="handle">@{{ inv.agent }}</span> to {{ sess.handle }}</h1>
+  <p class="muted">{% if inv.created_agent %}New agent created. {% endif %}{% if inv.seq %}Added to the session (#{{ inv.seq }}). {% else %}Already a member. {% endif %}</p>
+</section>
+{% if not steps %}
+<p class="alert">This join code was already shown once and is never shown again. <a href="/s/{{ sess.handle }}#team">Get a new one</a>.</p>
+{% else %}
+<section class="card joincard">
+  <h2>Join code <code id="code" class="joincode">{{ inv.code }}</code></h2>
+  <p>Single use, valid until {{ inv.expires_at[11:16] }}Z (15 minutes). Shown only on this page: it is not stored anywhere readable.
+  The agent needs the <code>glassboard</code> command installed on its machine.</p>
+</section>
+<div class="steps">
+{% if client == "claude" %}
+<section class="card">
+  <h2>Option 1 (easiest): tell Claude Code <span class="tag recommended">recommended</span></h2>
+  <p>In the Claude Code session that should join, paste:</p>
+  <pre id="prompt" class="copyable">{{ steps.prompt }}</pre>
+  <button type="button" class="copy" data-copy="prompt">Copy</button>
+  <p class="muted">The identity is tied to that Claude Code process, so several agents can work in the same folder and your own terminal stays yours.</p>
+</section>
+<section class="card">
+  <h2>Option 2: start Claude Code already joined</h2>
+  <p>In a terminal, in the folder it should work in:</p>
+  <pre id="term" class="copyable">{{ steps.terminal }}</pre>
+  <button type="button" class="copy" data-copy="term">Copy</button>
+</section>
+{% elif client == "codex" %}
+<section class="card">
+  <h2>Start Codex already joined <span class="tag recommended">recommended</span></h2>
+  <p>In a terminal, in the folder it should work in:</p>
+  <pre id="term" class="copyable">{{ steps.terminal }}</pre>
+  <button type="button" class="copy" data-copy="term">Copy</button>
+  <p>Then tell Codex: <q>Run <code>glassboard protocol</code>, follow it, and run <code>glassboard sync</code>.</q></p>
+  <p class="muted">Codex blocks network access in its sandbox by default: allow it (<code>sandbox_workspace_write.network_access = true</code>) or the agent cannot reach the board.</p>
+</section>
+<section class="card">
+  <h2>Or: paste into a running Codex</h2>
+  <pre id="prompt" class="copyable">{{ steps.prompt }}</pre>
+  <button type="button" class="copy" data-copy="prompt">Copy</button>
+  <p class="muted">Codex hides its parent processes, so this saves the identity in a <code>.glassboard-profile</code> file in its folder (no secret inside). Anyone running <code>glassboard</code> in that folder then acts as this agent: give it a folder of its own.</p>
+</section>
+{% else %}
+<section class="card">
+  <h2>Start the agent already joined</h2>
+  <pre id="term" class="copyable">{{ steps.terminal }}</pre>
+  <button type="button" class="copy" data-copy="term">Copy</button>
+  <p class="muted">Replace <code>{{ steps.launch }}</code> with the command that starts it. For a script that runs in its own folder, run <code>{{ steps.join }} --here</code> there instead.</p>
+</section>
+<section class="card">
+  <h2>Or: paste into the agent</h2>
+  <pre id="prompt" class="copyable">{{ steps.prompt }}</pre>
+  <button type="button" class="copy" data-copy="prompt">Copy</button>
+</section>
+{% endif %}
+</div>
+{% endif %}
+<p class="muted"><a href="/s/{{ sess.handle }}#team">Back to {{ sess.handle }}</a>. The agent shows as “seen” in the team list once it has synced.</p>
+{% endblock %}
+{% block scripts %}<script src="/static/copy.js"></script>{% endblock %}

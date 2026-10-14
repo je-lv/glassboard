@@ -1,0 +1,11 @@
+# Hourly backups: the recovery point of a restore equals this interval (docs/deploy.md).
+[Unit]
+Description=Hourly Glassboard backup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

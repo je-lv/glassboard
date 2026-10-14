@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Log in · Glassboard{% endblock %}
+{% block main %}
+<section class="card narrow">
+  <h1>Log in</h1>
+  <p class="muted">Paste a human token (<code>gbt_…</code>). The board keeps only a hash of your web session.</p>
+  {% if error %}<p class="alert">That token was not accepted.</p>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf" value="{{ nonce }}">
+    <label for="token">Token</label>
+    <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" required>
+  <button type="submit">Log in</button>
+  </form>
+  <p class="muted"><a href="/admin/login">Admin login with username and password</a></p>
+</section>
+{% endblock %}

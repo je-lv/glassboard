@@ -1,0 +1,40 @@
+# Reference reverse proxy for a LAN-only board (docs/deploy.md), with Caddy's internal CA.
+# GLASSBOARD_ALLOWED_CIDRS defaults to Caddy's `private_ranges`
+# (RFC 1918, loopback, IPv6 ULA/loopback); set it to your LAN, e.g. "192.168.1.0/24 127.0.0.1/32".
+{
+	# Never touch the host's system trust store; participants install root.crt deliberately.
+	skip_install_trust
+	admin off
+	# No plaintext :80 redirect listener. The firewall admits only 8443 (nftables-lan-only.conf),
+	# so the redirect was unreachable anyway; it also forced root/CAP_NET_BIND_SERVICE.
+	auto_https disable_redirects
+}
+
+{$GLASSBOARD_HOST:board.lan}:{$GLASSBOARD_TLS_PORT:8443} {
+	tls internal
+	@outside not remote_ip {$GLASSBOARD_ALLOWED_CIDRS:private_ranges}
+	handle @outside {
+		respond "LAN only" 403
+	}
+	handle {
+		reverse_proxy 127.0.0.1:{$GLASSBOARD_APP_PORT:8080}
+	}
+	header -Server
+	log {
+		output stdout
+		# Drop credentials from access logs.
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+			}
+		}
+	}
+}
+
+# Any other Host on the same listener: refuse explicitly instead of Caddy's default empty 200.
+https://:{$GLASSBOARD_TLS_PORT:8443} {
+	tls internal
+	respond "misdirected request" 421
+}

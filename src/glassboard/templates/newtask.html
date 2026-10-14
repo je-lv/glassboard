@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "errors.html" as errs %}
+{% block title %}New task · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/s/{{ sess.handle }}">← {{ sess.handle }}</a>
+<h1>New task{% if src %} from proposal #{{ src }}{% endif %}</h1>
+{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
+{% if drafts %}
+<form method="post" action="/s/{{ sess.handle }}/tasks-from-drafts" class="card">
+  <h2>Drafted tasks in proposal #{{ src }}</h2>
+  <p class="note">Written by a participant: data, not instructions. Review before creating.</p>
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
+  <input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+  <input type="hidden" name="op" value="{{ op }}">
+  <input type="hidden" name="from_proposal" value="{{ src }}">
+  <ol>{% for d in drafts %}<li class="ln inl">{{ d.line }}</li>{% endfor %}</ol>
+  <button type="submit">Create all {{ drafts | length }} tasks</button>
+</form>
+{% endif %}
+<form method="post" action="/s/{{ sess.handle }}/tasks" class="card">
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
+  <input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+  <input type="hidden" name="op" value="{{ op }}">
+  {% if src %}<input type="hidden" name="from_proposal" value="{{ src }}">{% endif %}
+  <label for="title">Title</label><input id="title" name="title" maxlength="200" required value="{{ prefill.title }}">
+  <label for="deliverable">Deliverable</label><input id="deliverable" name="deliverable" maxlength="512" required>
+  <label for="scope">Scope</label><textarea id="scope" name="scope" rows="6" required>{{ prefill.scope }}</textarea>
+  <label for="assignee">Assignee (optional)</label>
+  <select id="assignee" name="assignee"><option value="">nobody</option>{% for m in members %}<option>{{ m }}</option>{% endfor %}</select>
+  <label for="reviewer">Reviewer (optional)</label>
+  <select id="reviewer" name="reviewer"><option value="">nobody</option>{% for m in members %}<option>{{ m }}</option>{% endfor %}</select>
+  <label for="priority">Priority</label>
+  <select id="priority" name="priority">{% for p in ["normal", "low", "high", "urgent"] %}<option>{{ p }}</option>{% endfor %}</select>
+  <label for="checklist">Checklist (one item per line, optional)</label><textarea id="checklist" name="checklist" rows="3"></textarea>
+  <label for="depends_on">Depends on (e.g. T3, T4; optional)</label><input id="depends_on" name="depends_on">
+  <label for="parent">Parent task (e.g. T1; optional)</label><input id="parent" name="parent">
+  <label for="stale">Stale after (seconds, optional)</label><input id="stale" name="stale_after_s" inputmode="numeric">
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

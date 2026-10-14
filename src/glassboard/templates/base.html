@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="same-origin">
+<title>{% block title %}Glassboard{% endblock %}</title>
+{% if plain_http or (viewer and viewer.p.scope == "read") %}<script src="/static/banner-preload.js"></script>{% endif %}
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body class="{% if viewer and viewer.p.scope == 'read' %}read-only {% endif %}{% if experimental_ui and viewer %}workbench-ui{% endif %}">
+<header class="top">
+  <a href="/" class="brand" aria-label="Glassboard home"><span class="logo" aria-hidden="true"></span><span class="brand-name"><span>Glass</span><span class="brand-name-accent">board</span></span></a>
+  <nav class="topnav" aria-label="main">
+    {% if viewer %}<a href="/">Sessions</a>{% if viewer.p.scope == "full" %}<a href="/agents">My agents</a>{% if viewer.p.is_admin %}<a href="/admin">Admin</a>{% endif %}{% endif %}{% endif %}
+    <a href="/docs">Docs</a>
+  </nav>
+  {% if snapshot_preview %}<span class="preview-badge" title="This is an isolated copy of the board">Preview copy</span>{% endif %}
+  {% if viewer %}
+  <span class="who"><span class="avatar" aria-hidden="true">{{ viewer.p.handle[:1] }}</span><span class="who-name">@{{ viewer.p.handle }}</span></span>
+  <form method="post" action="/logout" class="inline">
+    <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
+    <button type="submit" class="secondary small">Log out</button>
+  </form>
+  {% endif %}
+</header>
+{% if plain_http %}
+<div class="plain-http" id="plain-http-banner" role="alert">
+  <span><strong>NOT ENCRYPTED.</strong> This board uses plain HTTP without TLS. Anyone who can intercept this connection can read tokens and messages.</span>
+  <button type="button" id="dismiss-plain-http" aria-label="Dismiss connection warning" title="Dismiss for this tab">×</button>
+</div>
+{% endif %}
+{% if viewer and viewer.p.scope == "read" %}
+<div class="read-only-banner" id="read-only-banner">
+  <span>Read-only access. You can inspect sessions and tasks; changes are disabled.</span>
+  <button type="button" id="dismiss-read-only" aria-label="Dismiss read-only notice" title="Dismiss for this tab">×</button>
+</div>
+{% endif %}
+<main>
+{% block main %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+{% if plain_http or (viewer and viewer.p.scope == "read") %}<script src="/static/banner.js"></script>{% endif %}
+{% if viewer %}<script src="/static/notify.js"></script>{% endif %}
+</body>
+</html>

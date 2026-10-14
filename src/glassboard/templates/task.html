@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% import "errors.html" as errs %}
+{% block title %}T{{ t.task }} · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/s/{{ sess.handle }}">← {{ sess.handle }}</a>
+<section class="head"><h1>T{{ t.task }} <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span> <span class="tag">g{{ t.gen }}</span> <span class="tag">v{{ t.version }}</span>
+  <span class="tag prio-{{ t.priority }}">{{ t.priority }}</span>{% if t.stale %} <span class="tag stale">stale</span>{% endif %}</h1>
+<p class="meta">{% if t.claimant %}claimant @{{ t.claimant }}{% if t.claimant_runtime %} ({{ t.claimant_runtime }}){% endif %} · {% endif %}{% if t.assignee %}assignee @{{ t.assignee }} · {% endif %}created by @{{ t.created_by }}{% if t.activity_age_s is not none %} · activity {{ t.activity_age_s // 60 }}m ago{% endif %} · stale after {{ t.effective_stale_after_s // 60 }}m</p></section>
+<p class="note">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment for {{ t.assignment_age_s // 60 }} minutes{% endif %}</p>
+{% if t.ack_overdue %}<p class="note">{% if t.assignee_synced_since_assignment %}Assignee has synced with this board since assignment, but has not acknowledged T{{ t.task }}.{% else %}No board sync recorded for the assignee since assignment.{% endif %}{% if can_coordinate %} Check with the assignee or reassign the task if needed.{% endif %}</p>{% endif %}
+{% if t.summary_needs_detail %}<p class="alert">The submitted summary does not explain the result. Read the history and ask for a fuller handoff before acceptance.</p>{% endif %}
+{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
+{% if t.submission %}
+<section class="card submission-evidence">
+  <h2>Current submission <a href="#e{{ t.submission.seq }}">#{{ t.submission.seq }}</a></h2>
+  {% if t.submission.commit %}<p><strong>Git commit</strong> <code>{{ t.submission.commit }}</code></p>{% endif %}
+  {% if t.submission.tests %}<h3>Recorded tests</h3><ul>{% for test in t.submission.tests %}<li><span class="tag st st-{{ 'done' if test.outcome == 'pass' else ('cancelled' if test.outcome == 'fail' else 'open') }}">{{ test.outcome }}</span> <code>{{ test.command }}</code>{% if test.detail %} · {{ test.detail }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if t.submission.incomplete_checklist_reason %}<p class="alert"><strong>Incomplete checklist override:</strong> {{ t.submission.incomplete_checklist_reason }}</p>{% endif %}
+  {% if t.review %}<p><strong>Peer review</strong> #{{ t.review.seq }} by <span class="handle">@{{ t.review.by }}</span> · {{ t.review.verdict }} · bound to submission #{{ t.review.submission_seq }}{% if t.review.commit %} at <code>{{ t.review.commit }}</code>{% endif %}</p>{% endif %}
+</section>
+{% endif %}
+{% if artifacts %}
+<section class="card"><h2>Linked artifacts <span class="count">{{ artifacts | length }}</span></h2><ul>{% for item in artifacts %}<li><a href="/s/{{ sess.handle }}/artifacts/{{ item.id }}/download">{{ item.name }}</a> · {{ item.size }} bytes · <code>{{ item.sha256 }}</code></li>{% endfor %}</ul><p><a href="/s/{{ sess.handle }}/artifacts">Open all session artifacts</a></p></section>
+{% endif %}
+<div class="layout">
+  <section class="timeline">
+    {% for ln in head %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}
+    <details class="review-trail" open><summary>Review trail · {{ trail | length }} milestones</summary>
+      <ol>{% for item in trail %}
+        <li><a href="#e{{ item.seq }}">#{{ item.seq }}</a> <strong>{{ item.type.replace("task.", "").replace("_", " ") }}</strong>
+          by <span class="handle">@{{ item.by }}</span> <time>{{ item.ts[:16].replace("T", " ") }}Z</time>
+          {% if item.detail %}<p>{{ item.detail }}</p>{% endif %}
+          {% if item.refs %}<ul>{% for ref in item.refs %}<li>{{ ref.label }} · {{ ref.loc }} · {{ ref.access }}</li>{% endfor %}</ul>{% endif %}
+        </li>{% endfor %}</ol>
+    </details>
+    <h2>History</h2>
+    {% for ev in history %}<div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}</div>{% endfor %}
+  </section>
+  <aside>
+  {% if can_review and t.submission %}
+    <form method="post" action="/s/{{ sess.handle }}/t/{{ t.task }}/review" class="card">
+      <h2>Peer review</h2>
+      <p class="muted">Your verdict will be bound to submission #{{ t.submission.seq }}{% if t.submission.commit %} at <code>{{ t.submission.commit }}</code>{% endif %}.</p>
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+      <input type="hidden" name="op" value="{{ op }}-review"><input type="hidden" name="submission_seq" value="{{ t.submission.seq }}">
+      {% if t.submission.commit %}<input type="hidden" name="commit" value="{{ t.submission.commit }}">{% endif %}
+      <label for="rv">Verdict</label><select id="rv" name="verdict"><option value="approve">Approve</option><option value="changes">Request changes</option></select>
+      <label for="rn">Notes (optional)</label><textarea id="rn" name="notes" rows="3"></textarea>
+      <button type="submit">Record peer review</button>
+    </form>
+  {% endif %}
+  {% if can_ack %}
+    <form method="post" action="/s/{{ sess.handle }}/t/{{ t.task }}/acknowledge" class="card">
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+      <input type="hidden" name="op" value="{{ op }}-acknowledge"><button type="submit">Acknowledge assignment</button>
+    </form>
+  {% endif %}
+  {% if can_coordinate %}
+    {% macro form(action, label, fields="", danger=False) %}
+    <form method="post" action="/s/{{ sess.handle }}/t/{{ t.task }}/{{ action }}" class="card">
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
+      <input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+      <input type="hidden" name="op" value="{{ op }}-{{ action }}">
+      <input type="hidden" name="if_version" value="{{ t.version }}">
+      {{ caller() if caller else "" }}
+      <button type="submit"{% if danger %} class="danger"{% endif %}>{{ label }}</button>
+    </form>
+    {% endmacro %}
+    {% if t.status == "review" %}
+      {% call form("accept", "Accept") %}<label for="ra">Note (optional)</label><input id="ra" name="reason">{% endcall %}
+      {% call form("return", "Return") %}<input type="hidden" name="submission_seq" value="{{ t.submission.seq }}"><label for="fb">Feedback (required)</label><textarea id="fb" name="feedback" rows="3" required></textarea>{% endcall %}
+    {% endif %}
+    {% if t.status in ("open", "in_progress", "blocked", "review") %}
+      {% call form("reassign", "Reassign") %}<label for="to">To</label>
+        <select id="to" name="to">{% for m in members %}<option>{{ m }}</option>{% endfor %}</select>
+        <label for="rr">Reason</label><input id="rr" name="reason">{% endcall %}
+      {% call form("cancel", "Cancel task", danger=True) %}<label for="rc">Reason</label><input id="rc" name="reason">{% endcall %}
+    {% endif %}
+    {% if t.status in ("in_progress", "blocked") %}
+      {% call form("release", "Release (as Session Manager)") %}<label for="ho">Handoff</label><input id="ho" name="handoff">{% endcall %}
+    {% endif %}
+    {% if t.status in ("done", "cancelled") %}
+      {% call form("reopen", "Reopen") %}<label for="ro">Reason</label><input id="ro" name="reason">{% endcall %}
+    {% endif %}
+    {% if t.status in ("open", "in_progress", "blocked", "review") %}
+      {% call form("edit", "Save edits") %}
+        <input type="hidden" name="if_version" value="{{ t.version }}">
+        {% for f, label, tag in (("title", "Title", "input"), ("deliverable", "Deliverable", "input"), ("scope", "Scope", "textarea")) %}
+          <label for="e{{ f }}">{{ label }}</label>
+          {% if edit[f].hidden %}<p class="note">The current {{ f }} contains hidden or control characters (shown above as ⟨U+…⟩); type a new value to replace it.</p>{% endif %}
+          {% if tag == "textarea" %}<textarea id="e{{ f }}" name="{{ f }}" rows="4">{{ edit[f].value }}</textarea>
+          {% else %}<input id="e{{ f }}" name="{{ f }}" value="{{ edit[f].value }}" maxlength="{{ 200 if f == 'title' else 512 }}">{% endif %}
+        {% endfor %}
+        <label for="ep">Priority</label>
+        <select id="ep" name="priority">{% for p in ["low", "normal", "high", "urgent"] %}<option{% if p == t.priority %} selected{% endif %}>{{ p }}</option>{% endfor %}</select>
+        <label for="erv">Reviewer</label>
+        <select id="erv" name="reviewer"><option value="none">nobody</option>{% for m in members %}<option{% if m == t.reviewer %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+        <label for="ech">Checklist (one item per line; ticks are kept for unchanged items)</label>
+        {% if edit.checklist.hidden %}<p class="note">The checklist contains hidden or control characters; edit it with the CLI.</p>
+        {% else %}<input type="hidden" name="checklist_shown" value="1"><textarea id="ech" name="checklist" rows="3">{{ edit.checklist.value }}</textarea>{% endif %}
+        <label for="edp">Depends on (e.g. T3, T4)</label><input id="edp" name="depends_on" value="{{ edit.depends_on }}">
+        <label for="epa">Parent task (e.g. T1)</label><input id="epa" name="parent" value="{{ edit.parent }}">
+        <label for="ea">Stale after (seconds, 300-14400)</label><input id="ea" name="stale_after_s" inputmode="numeric" value="{{ t.stale_after_s or '' }}">
+      {% endcall %}
+    {% endif %}
+  {% else %}
+    <p class="muted">Only human Session Managers manage tasks here. Agents claim and report with the CLI.</p>
+  {% endif %}
+  </aside>
+</div>
+{% endblock %}

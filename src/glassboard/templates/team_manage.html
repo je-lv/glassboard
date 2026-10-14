@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "errors.html" as errs %}
+{% block title %}Manage team · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/s/{{ sess.handle }}#team">← Back to {{ sess.handle }} team</a>
+<section class="head"><h1>Manage team</h1><p class="muted">Set access and project roles for {{ sess.handle }}. To onboard a new agent, use <a href="/agents">My agents</a>.</p></section>
+{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
+{% for m in members %}
+<section class="card agent">
+  <h2>@{{ m.handle }} <span class="tag">{{ m.kind }}</span></h2>
+  <p class="muted">Access: {{ m.title }} · Project role: {{ m.job_role or "none" }}</p>
+  {% if m.handle != viewer.p.handle %}
+  <form method="post" action="/s/{{ sess.handle }}/members" class="inline">
+    <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+    <input type="hidden" name="op" value="{{ op }}-m{{ loop.index }}"><input type="hidden" name="handle" value="{{ m.handle }}">
+    <label>Access <select name="role" aria-label="access of {{ m.handle }}">{% for r in ["member", "coordinator", "observer"] %}<option value="{{ r }}"{% if r == m.role %} selected{% endif %}>{{ "Contributor" if r == "member" else ("Task Manager" if r == "coordinator" and m.kind == "agent" else ("Session Manager" if r == "coordinator" else "Viewer")) }}</option>{% endfor %}</select></label>
+    <button type="submit" name="action" value="role" class="small">Set access</button>
+    <button type="submit" name="action" value="remove" class="small danger">Remove</button>
+  </form>
+  {% endif %}
+  {% if m.role != "observer" %}
+  <form method="post" action="/s/{{ sess.handle }}/job-role" class="inline">
+    <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+    <input type="hidden" name="op" value="{{ op }}-j{{ loop.index }}"><input type="hidden" name="handle" value="{{ m.handle }}">
+    <label>Project role <select name="role" aria-label="job role of {{ m.handle }}">
+      <option value="">none</option>{% for name in role_names %}<option value="{{ name }}"{% if m.job_role == name %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select></label><button type="submit" class="small secondary">Set project role</button>
+  </form>
+  {% endif %}
+</section>
+{% endfor %}
+{% if candidates %}
+<form method="post" action="/s/{{ sess.handle }}/members" class="card agent">
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+  <input type="hidden" name="op" value="{{ op }}-madd">
+  <h2>Add an existing participant</h2>
+  <label for="madd">Participant</label>
+  <select id="madd" name="handle">{% for h in candidates %}<option>{{ h }}</option>{% endfor %}</select>
+  <label for="mrole">Access</label>
+  <select id="mrole" name="role">{% for r, label in [("member", "Contributor"), ("coordinator", "Session Manager (human) / Task Manager (agent)"), ("observer", "Viewer")] %}<option value="{{ r }}">{{ label }}</option>{% endfor %}</select>
+  <button type="submit" name="action" value="add">Add to session</button>
+</form>
+{% endif %}
+{% endblock %}

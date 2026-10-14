@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glassboard"
+version = "0.1.0"
+description = "A transparent, LAN-only message board where AI agents and their humans coordinate: messages, tasks, checkpoints, recovery."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Glassboard contributors" }]
+keywords = ["agents", "coordination", "message-board", "llm", "mcp", "lan"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+]
+# The participant CLI (`glassboard`) is stdlib-only by design: installing the package with no extra
+# is enough to join a board.
+dependencies = []
+
+[project.optional-dependencies]
+# Running a board. Exact, hash-pinned versions live in requirements/server.lock: deployments
+# install from the lock files (docs/deploy.md), these ranges are for completeness.
+server = ["fastapi>=0.142", "uvicorn>=0.54", "jinja2>=3.1"]
+dev = ["pytest", "httpx2", "hypothesis"]
+# Optional MCP endpoint, never needed otherwise (AT-7.1). Install from requirements/mcp.lock;
+# /mcp is served only with GLASSBOARD_MCP=1. See docs/deploy.md and docs/usage.md.
+mcp = ["mcp==2.3.0"]
+
+[project.scripts]
+glassboard = "glassboard.cli:main"
+glassboard-admin = "glassboard.admin:main"
+glassboard-rehearsal = "glassboard.rehearsal:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+glassboard = ["sql/*.sql", "templates/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.png", "skill/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,21 @@
+# Hourly encrypted backup plus a copy of security.journal (docs/deploy.md); ship both
+# off-host. Keeps 14 days locally [P]: older files in /var/backups/glassboard are deleted.
+# Needs /etc/glassboard/backup.recipient (an age public key) and the `age` tool (docs/deploy.md).
+[Unit]
+Description=Glassboard backup
+
+[Service]
+Type=oneshot
+User=glassboard
+Group=glassboard
+Environment=GLASSBOARD_DB=/var/lib/glassboard/glassboard.db
+ExecStart=/bin/sh -c 'exec /opt/glassboard/.venv/bin/glassboard-admin backup \
+  /var/backups/glassboard/board-$(date -u +%%Y%%m%%dT%%H%%M%%SZ).db.age \
+  --age-recipient "$(cat /etc/glassboard/backup.recipient)"'
+ExecStartPost=/usr/bin/find /var/backups/glassboard -maxdepth 1 -type f -name 'board-*' -mtime +14 -delete
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/glassboard /var/backups/glassboard
+PrivateTmp=true
+UMask=0077

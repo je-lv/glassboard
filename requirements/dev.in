@@ -1,0 +1,4 @@
+-c server.lock
+pytest==9.1.1
+httpx2==2.13.1
+hypothesis==6.168.5

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Observe {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<section class="head"><h1>Observe · {{ sess.handle }}</h1>
+  <p class="muted">One cursor over the recorded run. Every panel below shows the state at that event.</p>
+</section>
+<nav class="subnav" aria-label="session">
+  <a class="tab" href="/s/{{ sess.handle }}">Timeline</a>
+  <a class="tab" href="/s/{{ sess.handle }}/board">Board</a>
+  <a class="tab" href="/s/{{ sess.handle }}/progress">Progress</a>
+  <a class="tab" href="/s/{{ sess.handle }}/artifacts">Artifacts</a>
+  <a class="tab on" href="/s/{{ sess.handle }}/observe" aria-current="page">Observe</a>
+</nav>
+<div id="observe-live" data-fragment="/s/{{ sess.handle }}/observe/content" data-public="/s/{{ sess.handle }}/observe"{% if live %} data-src="/s/{{ sess.handle }}/observe/content"{% endif %}>
+  {% include "observe-content.html" %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/poll.js"></script>{% endblock %}

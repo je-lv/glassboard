@@ -1,0 +1,13 @@
+.venv/
+.venv-mcp/
+var/
+build/
+dist/
+*.db
+*.db-wal
+*.db-shm
+*.token
+__pycache__/
+.pytest_cache/
+.hypothesis/
+*.egg-info/

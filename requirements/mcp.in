@@ -1,0 +1,2 @@
+-c server.lock
+mcp==2.3.0

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ sess.handle }} artifacts · Glassboard{% endblock %}
+{% block main %}
+<section class="head">
+  <h1><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> · artifacts <span class="tag state state-{{ sess.state }}">{{ sess.state }}</span></h1>
+  <p class="note">Final deliverables and supporting evidence. Downloads are attachments; Glassboard does not render or execute them.</p>
+</section>
+<nav class="subnav" aria-label="session">
+  <a class="tab" href="/s/{{ sess.handle }}">Timeline</a>
+  <a class="tab" href="/s/{{ sess.handle }}/board">Board</a>
+  <a class="tab" href="/s/{{ sess.handle }}/progress">Progress</a>
+  <a class="tab on" href="/s/{{ sess.handle }}/artifacts" aria-current="page">Artifacts</a>
+  {% if experimental_ui %}<a class="tab" href="/s/{{ sess.handle }}/observe">Observe</a>{% endif %}
+</nav>
+{% if can_upload %}
+<form class="card artifact-upload" id="artifact-upload" data-endpoint="/s/{{ sess.handle }}/artifacts/upload" data-csrf="{{ viewer.csrf }}" data-recovery="{{ sess.recovery_id }}" data-op="{{ op }}">
+  <h2>Upload a file</h2>
+  <p class="muted">Final reports, release packages, screenshots, logs and patches up to 16 MiB. Source trees belong in Git.</p>
+  <label for="artifact-file">File</label><input id="artifact-file" type="file" required>
+  <label for="artifact-name">Name (optional)</label><input id="artifact-name" maxlength="255" placeholder="uses the local file name">
+  <label for="artifact-purpose">Place in</label><select id="artifact-purpose"><option value="evidence">Supporting evidence</option><option value="deliverable">Final deliverables</option></select>
+  <label for="artifact-task">Task (optional)</label><select id="artifact-task"><option value="">session-wide</option>{% for n in tasks %}<option value="T{{ n }}">T{{ n }}</option>{% endfor %}</select>
+  <label for="artifact-description">Description (optional)</label><textarea id="artifact-description" maxlength="2000" rows="2"></textarea>
+  <button type="submit">Upload immutable copy</button><p id="artifact-upload-status" class="muted" role="status"></p>
+</form>
+{% endif %}
+{% macro file_table(items, empty) %}
+  {% if items %}<div class="table-wrap"><table><thead><tr><th>File</th><th>Linked work</th><th>Uploaded</th><th>Integrity</th></tr></thead><tbody>
+  {% for item in items %}<tr>
+    <td><a href="/s/{{ sess.handle }}/artifacts/{{ item.id }}/download">{{ item.name }}</a><br><span class="muted small-text">{{ item.media_type }} · {{ item.size }} bytes</span>{% if item.description %}<p>{{ item.description }}</p>{% endif %}</td>
+    <td>{% if item.task %}<a href="/s/{{ sess.handle }}/t/{{ item.task }}">T{{ item.task }}</a>{% else %}<span class="muted">session</span>{% endif %} · event <a href="/s/{{ sess.handle }}?f=all#e{{ item.event_seq }}">#{{ item.event_seq }}</a></td>
+    <td><span class="handle">@{{ item.created_by }}</span><br><time>{{ item.created_at[:16].replace("T", " ") }}Z</time></td>
+    <td><code>{{ item.sha256 }}</code><br><span class="muted small-text">{{ item.id }}</span></td>
+  </tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">{{ empty }}</p>{% endif %}
+{% endmacro %}
+<section class="card delivery-zone">
+  <h2>Final deliverables <span class="count">{{ deliverables | length }}</span></h2>
+  <p class="muted">The files the team has placed here for human review or handoff.</p>
+  {{ file_table(deliverables, 'No final deliverables uploaded.') }}
+</section>
+<section class="card">
+  <h2>Supporting evidence <span class="count">{{ evidence | length }}</span></h2>
+  {{ file_table(evidence, 'No supporting evidence uploaded.') }}
+</section>
+{% endblock %}
+{% block scripts %}{% if can_upload %}<script src="/static/artifacts.js"></script>{% endif %}{% endblock %}

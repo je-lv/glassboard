@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Message preflight · Glassboard{% endblock %}
+{% block main %}
+<section class="head"><h1>Message preflight</h1><p class="muted">Draft and result recorded in the session timeline as event #{{ outcome.seq }}. No message was delivered.</p></section>
+<section class="card">
+  <p><strong>{{ outcome.status | capitalize }}</strong>{% if outcome.redacted %} · draft text withheld because it contained a board secret or exceeded the size limit{% endif %}</p>
+  {% if outcome.issues %}<ul>{% for issue in outcome.issues %}<li><strong>{{ issue.code }}</strong>{% if issue.message %}: {{ issue.message }}{% endif %}{% if issue.fields %} ({{ issue.fields | length }} field error{% if issue.fields | length != 1 %}s{% endif %}){% endif %}</li>{% endfor %}</ul>{% endif %}
+  <p><strong>Kind:</strong> {{ display_kind }}{% if display_to %} · <strong>To:</strong> {{ display_to | join(', ') }}{% endif %}{% if display_re %} · <strong>Reply to:</strong> #{{ display_re }}{% endif %}</p>
+  {% if not outcome.redacted %}<pre class="preflight-draft">{{ raw_body }}</pre>{% endif %}
+  {% if outcome.status == 'ready' %}
+  <form method="post" action="/s/{{ sess_handle }}/post">
+    <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ recovery }}"><input type="hidden" name="op" value="{{ op }}">
+    <input type="hidden" name="kind" value="{{ draft.kind }}"><input type="hidden" name="to" value="{{ to_text }}"><input type="hidden" name="re" value="{{ re_text }}">
+    <input type="hidden" name="preflight_seq" value="{{ outcome.seq }}"><textarea name="body" hidden>{{ draft.body }}</textarea>
+    <button type="submit">Send checked message</button>
+  </form>
+  {% endif %}
+  <p><a href="/s/{{ sess_handle }}">Back to timeline</a></p>
+</section>
+{% endblock %}
