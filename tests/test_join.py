@@ -236,6 +236,8 @@ def test_dashboard_add_agent_shows_the_join_steps_once(b):
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     code = re.search(r'<code id="code" class="joincode">([A-Z2-7-]+)</code>', r.text).group(1)
     assert CODE.match(code) and "@jose/claude" in r.text                  # empty name = the client type
+    session = c.get("/s/s1").text
+    assert "Invited · not connected" in session
     assert f"glassboard join https://testserver {code}" in r.text and f"{code} -- claude" in r.text
     assert re.findall(r"<script[^>]*>", r.text) == ['<script src="/static/copy.js">', '<script src="/static/notify.js">']
     assert " style=" not in r.text and "onclick" not in r.text
@@ -244,6 +246,15 @@ def test_dashboard_add_agent_shows_the_join_steps_once(b):
     r = c.post("/s/s1/invite", data={**form, "op": "01JDASHINVITEBBBBBBBBBBBBBB", "client": "codex", "agent": "rev-1"})
     assert "@jose/rev-1" in r.text and "-- codex" in r.text and "network_access" in r.text
     assert "jose/rev-1" in [e["data"]["handle"] for e in b.events() if e["type"] == "member.added"]
+
+
+def test_redeemed_invite_is_a_member_but_not_connected_until_first_sync(b):
+    from test_dashboard import login
+    code = invite(b, agent="helper").json()["code"]
+    assert "Invited · not connected" in login(b, "jose").get("/s/s1").text
+    assert join(b, code).status_code == 200
+    page = login(b, "jose").get("/s/s1").text
+    assert "Invited · not connected" not in page and "member · not connected" in page
 
 
 def test_dashboard_add_agent_is_for_coordinators_with_valid_names(b):

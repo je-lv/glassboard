@@ -23,7 +23,8 @@
     </form>{% endif %}</li>
 {% endfor %}
 </ul>
-<div class="section-head" id="session-list"><h1>Your sessions</h1><button type="button" data-panel-open="new-session-panel">New session</button></div>
+<div class="section-head" id="session-list"><h1>Your sessions</h1>{% if viewer.p.scope == "full" %}<button type="button" data-panel-open="new-session-panel">New session</button>{% endif %}</div>
+{% if viewer.p.scope == "full" %}
 <dialog id="new-session-panel" class="side-panel" aria-labelledby="new-session-title">
 <div class="panel-head"><h2 id="new-session-title">New session</h2><button type="button" class="secondary" data-panel-close aria-label="Close new session panel">×</button></div>
 <form method="post" action="/new-session" class="panel-form newsession">
@@ -37,6 +38,7 @@
   <button type="submit">Create session</button>
 </form>
 </dialog>
+{% endif %}
 {% if not sessions %}<p class="empty">You are not a member of any session yet.</p>{% endif %}
 {% if sessions %}
 <ul class="sessions">
@@ -44,11 +46,11 @@
   {% if s.role == "coordinator" %}{% set access_style = "session-manager" %}{% set access_title = "Session Manager" %}
   {% elif s.role == "member" %}{% set access_style = "contributor" %}{% set access_title = "Contributor" %}
   {% else %}{% set access_style = "viewer" %}{% set access_title = "Viewer" %}{% endif %}
-  <li><div class="srow"><a href="/s/{{ s.session }}" class="sname">{{ s.session }}</a> <span class="tag role role-{{ access_style }}">{{ access_title }}</span> <span class="tag state state-{{ s.state }}">{{ s.state }}</span>{% if s.autonomous %} <span class="tag">autonomous</span>{% endif %}
-      <a href="/s/{{ s.session }}/board" class="muted small-text">board</a></div>
+  <li><div class="session-main"><a href="/s/{{ s.session }}" class="session-title">{{ s.title_line }}</a><span class="session-handle">{{ s.session }}</span></div>
+      <div class="srow"><span class="tag role role-{{ access_style }}">{{ access_title }}</span> <span class="tag state state-{{ s.state }}">{{ s.state }}</span>{% if s.autonomous %} <span class="tag">autonomous</span>{% endif %}</div>
       {% if s.o %}<div class="scounts muted"><span class="tag st st-open">open {{ s.o.counts.open }}</span> <span class="tag st st-in_progress">in progress {{ s.o.counts.in_progress }}</span> <span class="tag st st-blocked">blocked {{ s.o.counts.blocked }}</span> <span class="tag st st-review">review {{ s.o.counts.review }}</span> <span class="tag st st-done">done {{ s.o.counts.done }}</span>{% if s.o.stale %} <span class="tag stale">stale {{ s.o.stale }}</span>{% endif %}{% if s.o.owed %} <span class="tag">owed {{ s.o.owed }}</span>{% endif %}</div>
       {% else %}<div class="scounts muted">epoch {{ s.epoch }} · head #{{ s.head }}</div>{% endif %}
-      <div class="ln inl">{{ s.title_line }}</div></li>
+      <div class="session-actions"><a class="button small" href="/s/{{ s.session }}">Open session</a><a class="button secondary small" href="/s/{{ s.session }}/board">Open board</a></div></li>
 {% endfor %}
 </ul>
 {% endif %}

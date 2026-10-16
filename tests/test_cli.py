@@ -112,6 +112,18 @@ def test_body_option_may_follow_other_post_options(L, gb):
     assert event["type"] == "approval" and event["body"] == "May I continue?"
 
 
+def test_positional_body_may_follow_post_options_and_all_alias_broadcasts(L, gb):
+    ok(L.cli("jose", "use", "s1"))
+    result = L.cli("jose", "post", "answer", "--re", "1", "--task", "T1", "A multiword answer")
+    # The parser accepts the historical ordering; nonexistent references are now rejected by the API.
+    assert result.returncode == 5 and "not_found" in result.stderr
+    result = L.cli("jose", "post", "note", "--to", "all", "--body", "Broadcast")
+    assert result.returncode == 0, result.stderr
+    assert gb.events()[-1]["body"] == "Broadcast" and gb.recipients("s1", gb.head()) == []
+    result = L.cli("jose", "post", "note", "--to", "all,jose/claude", "--body", "Bad")
+    assert result.returncode == 2 and "all by itself" in result.stderr
+
+
 def test_post_rejects_multiple_body_sources(L):
     result = L.cli("jose", "post", "note", "positional", "--body", "option")
     assert result.returncode == 2

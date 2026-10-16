@@ -804,7 +804,13 @@ def _post_message(a) -> dict:
     if standup:
         msg["standup"] = standup
     if a.to:
-        msg["to"] = [h.strip() for h in a.to.split(",") if h.strip()]
+        recipients = [h.strip() for h in a.to.split(",") if h.strip()]
+        if recipients == ["all"]:
+            recipients = []
+        elif "all" in recipients:
+            raise CliError(EXIT_USAGE, "usage", "Use --to all by itself, or list specific handles.")
+        if recipients:
+            msg["to"] = recipients
     if a.re is not None:
         msg["re"] = a.re
     if a.task:
@@ -1536,11 +1542,11 @@ def build_parser() -> argparse.ArgumentParser:
     jr.add_argument("-s", "--session")
     jr.add_argument("--json", action="store_true")
     for verb in ("post", "preflight"):
-        po = sess(sub.add_parser(verb)); po.add_argument("kind", choices=["question", "answer", "update", "proposal", "blocker", "note", "decision", "approval"])
-        po.add_argument("body", nargs="?", help='message text immediately after KIND, or "-" to read stdin (optional for a stand-up update)'); po.add_argument("--to", help="comma-separated handles")
+        po = sess(sub.add_parser(verb)); po.add_argument("kind", choices=["question", "answer", "update", "proposal", "blocker", "note", "decision", "approval"], help="message kind; decision is human Session Managers only; approval must name humans with --to")
+        po.add_argument("body", nargs="?", help='message text immediately after KIND, or "-" to read stdin (optional for a stand-up update)'); po.add_argument("--to", help="comma-separated handles; omit it or use 'all' to broadcast")
         po.add_argument("--body", dest="body_option", help='message text; unlike the positional form, may appear after other options')
         po.add_argument("--body-file", metavar="PATH", help='read UTF-8 message text from PATH (or "-" for stdin)')
-        po.add_argument("--re", type=int); po.add_argument("--task"); po.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]")
+        po.add_argument("--re", type=int); po.add_argument("--task"); po.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
         po.add_argument("--done", help="stand-up update: what got done"); po.add_argument("--doing", help="stand-up update: in progress")
         po.add_argument("--blocked", help="stand-up update: what blocks you")
         po.add_argument("--draft", action="append", metavar="TITLE|SCOPE|DELIVERABLE[|ASSIGNEE]", help="proposal: a proposed task (repeat, at most 10)")
@@ -1566,7 +1572,7 @@ def build_parser() -> argparse.ArgumentParser:
     sess(sub.add_parser("outbox"))
     cp = sess(sub.add_parser("checkpoint")); cp.add_argument("action", choices=["save", "show"])
     cp.add_argument("--summary"); cp.add_argument("--next"); cp.add_argument("--blockers")
-    cp.add_argument("--task", action="append", metavar="T#"); cp.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]")
+    cp.add_argument("--task", action="append", metavar="T#"); cp.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
     cp.add_argument("--body", help='longer handoff text, or "-" for stdin'); cp.add_argument("--principal")
     cp.add_argument("--n"); cp.add_argument("--json", action="store_true")
     tk2 = sess(sub.add_parser("task"))
@@ -1577,7 +1583,7 @@ def build_parser() -> argparse.ArgumentParser:
     tk2.add_argument("--scope"); tk2.add_argument("--deliverable"); tk2.add_argument("--assignee"); tk2.add_argument("--title")
     tk2.add_argument("--stale-after", type=int, metavar="SECONDS"); tk2.add_argument("--to")
     tk2.add_argument("--status"); tk2.add_argument("--mine", action="store_true"); tk2.add_argument("--json", action="store_true")
-    tk2.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]")
+    tk2.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
     tk2.add_argument("--as-coordinator", action="store_true", help="release without a fence (human coordinator)")
     tk2.add_argument("--check", action="append", metavar="ITEM", help="checklist item (create/edit; repeat; edit replaces the list)")
     tk2.add_argument("--undo", action="store_true", help="task check: mark the item not done")
@@ -1625,7 +1631,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     ap = build_parser()
-    a = ap.parse_args(argv)
+    a, extra = ap.parse_known_args(argv)
+    # argparse subparsers do not support parse_intermixed_args. Preserve the documented positional
+    # message form when a quoted body follows options, e.g. `post answer --re 11 "text"`.
+    if extra and a.cmd in ("post", "preflight") and a.body is None and len(extra) == 1 and not extra[0].startswith("-"):
+        a.body = extra[0]
+    elif extra:
+        ap.error("unrecognized arguments: " + " ".join(extra))
     if (a.cmd == "task" and a.action not in ("list", "next") and not a.task
             and not (a.action == "create" and a.from_proposal is not None and a.draft)):
         ap.error(f"task {a.action} needs a task (or, for create, a title)")

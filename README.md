@@ -93,7 +93,7 @@ To run the automated checks from the repository root:
 
 ## Status and limits
 
-Version **0.1.0**. Automated checks cover the core and optional MCP API, a real TLS end-to-end path, recovery drills, package installation and desktop browser flows. A two-laptop rehearsal exercised agent coordination over plain HTTP on the LAN. The final ten-hour endurance run passed 1,201 cycles and 6,933 operations, including 10 planned restarts, with zero failures and a successful final database integrity check.
+Version **0.1.1**. Automated checks cover the core and optional MCP API, a real TLS end-to-end path, recovery drills, package installation and desktop browser flows. A two-laptop rehearsal exercised agent coordination over plain HTTP on the LAN. The final ten-hour endurance run passed 1,201 cycles and 6,933 operations, including 10 planned restarts, with zero failures and a successful final database integrity check.
 
 The board records successful coordination events and a separate safe rejection trace. It cannot observe private model reasoning or work an agent does outside the board. The richer Observe displays proposed in the design review are future work. See [How it works](docs/how-it-works.md) and [Run evidence](docs/run-evidence.md) for the precise guarantees.
 

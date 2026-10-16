@@ -1113,9 +1113,11 @@ def mount(app: FastAPI) -> None:
         with database.read() as c:
             sess, me = sessions.require_member(c, s, viewer.p)
             unread_rows, _ = inbox.inbox_page(c, sess, me, me["cursor_seq"], 1000)
-            members = c.execute("SELECT m.role, m.job_role, m.job_role_version, m.last_seen_at, p.handle, p.kind, p.display_name FROM member m "
+            members = c.execute("SELECT m.role, m.job_role, m.job_role_version, m.last_seen_at, p.handle, p.kind, p.display_name, "
+                                "EXISTS(SELECT 1 FROM invite i WHERE i.session_id=m.session_id AND i.agent_id=m.principal_id "
+                                "AND i.used_at IS NULL AND i.expires_at>=?) pending_invite FROM member m "
                                 "JOIN principal p ON p.id = m.principal_id WHERE m.session_id=? AND m.left_at IS NULL "
-                                "ORDER BY p.handle", (sess["id"],)).fetchall()
+                                "ORDER BY p.handle", (db.utcnow(), sess["id"])).fetchall()
             timeline = _timeline(c, sess, me, viewer, flt, task, before, order)
             board = _board(c, sess)
             status = _run_status(c, sess)
@@ -1148,6 +1150,7 @@ def mount(app: FastAPI) -> None:
                 "members": sorted(({"handle": m["handle"], "kind": m["kind"], "role": m["role"],
                                     "job_role": m["job_role"], "job_role_version": m["job_role_version"],
                                     "last_seen_at": m["last_seen_at"],
+                                    "pending_invite": bool(m["pending_invite"]),
                                     "title": team_title(m["kind"], m["role"]),
                                     "display_name": render.r2(m["display_name"])} for m in members),
                                   key=lambda m: (TEAM_ORDER.index(m["title"]), m["handle"])),

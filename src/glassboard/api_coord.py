@@ -25,7 +25,7 @@ from . import db, events, ids, inbox, render, routing, tokens
 from .api_tasks import _age_s
 from .deps import authenticate, get_db, require_full_scope
 from .errors import ApiError
-from .idempotency import idempotency_key, respond
+from .idempotency import idempotency_key, receipt_body, respond
 from .models import StrictModel
 from .mutation import runtime_label, session_tx
 from .sessions import require_member, require_state
@@ -76,6 +76,11 @@ def take_lease(s: str, body: LeaseIn, key: str = Depends(idempotency_key),
         require_state(tx.sess, "message")
         held = c.execute("SELECT * FROM lease WHERE session_id=? AND resource=?", (sid, body.resource)).fetchone()
         if held is not None:
+            if held["holder_id"] == p.id:
+                # A restarted runtime may repeat a take before it can see or release its own prior
+                # lease. Treat that as success instead of queueing forever behind itself.
+                return respond(receipt_body({"session": tx.sess["handle"], "seq": held["seq"],
+                                             "resource": body.resource, "already_held": True}), 201)
             raise ApiError(409, "resource_held", "Someone already holds a lease on this resource.",
                            hint="Coordinate with the holder, or ask a coordinator to release it.",
                            details={"holder": inbox.handle_map(c, [held["holder_id"]]).get(held["holder_id"]),

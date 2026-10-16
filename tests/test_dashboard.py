@@ -212,6 +212,8 @@ def test_read_token_stays_read_only_in_browser_and_revocation_ends_session(d):
     assert 'id="dismiss-read-only"' in page.text and 'aria-label="Dismiss read-only notice"' in page.text
     assert page.text.index('/static/banner-preload.js') < page.text.index('/static/app.css')
     assert c.get('/static/banner-preload.js').status_code == 200
+    home = c.get("/").text
+    assert "New session" not in home and 'id="new-session-panel"' not in home
     csrf = csrf_of(page.text)
     head = d.head()
     assert c.post("/s/s1/post", data={"csrf": csrf, "recovery": d.rec(), "op": ids.new_ulid(),
@@ -526,6 +528,8 @@ def test_sessions_and_members_from_the_dashboard(d):
     the same API code paths run (events, last-coordinator guard, journaled removals)."""
     c = login(d, "jose")
     home = c.get("/").text
+    assert 'class="session-title"' in home
+    assert "Open session" in home and "Open board" in home
     form = {"csrf": csrf_of(home), "op": "dash-ns-0001", "handle": "test2", "title": "Second agent test"}
     r = c.post("/new-session", data=form)
     assert r.status_code == 303 and r.headers["location"] == "/s/test2"

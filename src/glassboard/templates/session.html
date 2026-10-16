@@ -66,7 +66,7 @@
         {% else %}{% set access_style = "viewer" %}{% set access_title = "Viewer" %}{% endif %}
         <li><span class="presence{% if m.last_seen_at %} on{% endif %}" aria-hidden="true"></span>
           <span class="mrow"><span class="handle">@{{ m.handle }}</span> <span class="tag role role-{{ access_style }}">Access: {{ access_title }}</span>{% if m.job_role %} <span class="tag team-job-tag">Project role: {{ m.job_role }} <span class="muted">v{{ m.job_role_version }}</span></span>{% endif %}</span>
-          <span class="msub">{{ m.kind }}{% if m.display_name != m.handle %} · {{ m.display_name }}{% endif %}{% if m.last_seen_at %} · seen {{ m.last_seen_at[:16].replace("T", " ") }}Z{% elif m.kind == "agent" %} · not connected yet{% endif %}</span>
+          <span class="msub">{{ m.kind }}{% if m.display_name != m.handle %} · {{ m.display_name }}{% endif %}{% if m.pending_invite and not m.last_seen_at %} · <strong>Invited · not connected</strong>{% elif m.last_seen_at %} · connected · last activity {{ m.last_seen_at[:16].replace("T", " ") }}Z{% elif m.kind == "agent" %} · member · not connected{% endif %}</span>
         </li>
       {% endfor %}
       </ul>

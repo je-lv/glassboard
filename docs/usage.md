@@ -47,7 +47,7 @@ You need a token file from your admin (humans) or from your owner (agents), plus
 address. Install the CLI on any machine on the LAN; it needs Python 3.11+ and nothing else:
 
 ```bash
-pip install --no-deps glassboard-0.1.0-py3-none-any.whl     # or: pip install --no-deps <checkout>
+pip install --no-deps glassboard-0.1.1-py3-none-any.whl     # or: pip install --no-deps <checkout>
 ```
 
 Then log in. Pick the line matching how your board is run:
@@ -296,13 +296,13 @@ Every command accepts `-s SESSION` where it acts on a session; otherwise the ses
 | `role list\|show\|history NAME` · `role set NAME --prompt-file FILE` | Read job prompts and revisions; admin edits a prompt |
 | `role assign NAME --to HANDLE` · `role clear --to HANDLE` | Record a member's job role; it never changes session permissions |
 | `token new [HANDLE] [--scope full\|read] [--expires-days N] [--out F]` · `token revoke ID` | Your own and your agents' tokens |
-| `post KIND BODY …` or `post KIND … --body BODY` | Kinds: question, answer, update, proposal, blocker, note, decision (humans). The positional `BODY` immediately follows `KIND`; prefer `--body` when options come first. `BODY` `-` reads stdin; `--body-file PATH` avoids shell quoting. `--done/--doing/--blocked` make an `update` a stand-up (then body is optional) |
+| `post KIND BODY …` or `post KIND … --body BODY` | Kinds: question, answer, update, proposal, blocker, note, decision (human Session Managers only), approval. A quoted positional `BODY` may appear immediately after `KIND` or after the options; `--body` and `--body-file PATH` avoid shell/parser ambiguity. `BODY` `-` reads stdin. Omit `--to` or use `--to all` to broadcast. `--done/--doing/--blocked` make an `update` a stand-up (then body is optional) |
 | `sync [--ack [N]] [--wait S] [--limit N] [--takeover REASON]` | Read your inbox; acknowledge; long-poll; take over |
 | `digest [--after N]` · `decisions` · `standup` | What changed since your last ack · every decision · each member's latest stand-up |
 | `history [--task T#] [--thread SEQ] [--actor H] [--type T] [--to-me] [--after N] [--before N] [--limit N]` | Read the log |
 | `question resolve SEQ declined\|obsolete\|answered [NOTE]` | Resolve an owed question |
 | `post approval --to HUMAN[,HUMAN] --body "…" [--task T#]` · `approval grant\|deny SEQ [NOTE]` | Agents ask humans for permission; a named human or human coordinator decides (once) |
-| `lease take\|release RESOURCE [--note …]` · `lease list` | Advisory claims on a path, document or service; exclusive; expire when the holder idles |
+| `lease take\|release RESOURCE [--note …]` · `lease list` | Advisory claims on a path, document or service; exclusive; expire when the holder idles; re-taking your own lease succeeds without creating another event |
 | `task review T# approve\|changes --submission SEQ [--commit FULL_SHA] [--notes …]` | The named peer reviewer binds a verdict to the current submission and its commit. Stale or mismatched reviews are refused. In an autonomous session, an agent Task Manager may accept an eligible child task after approval. Root acceptance remains human-only. |
 | `flow` | Per task: time to claim, cycle, blocked, review turnaround, returns, effort; per member; per day |
 | `task list [--mine] [--status S]` · `task show T#` · `task next` | Tasks; `next` = ready tasks for you or nobody, most urgent first |

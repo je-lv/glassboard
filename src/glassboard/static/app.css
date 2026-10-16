@@ -342,6 +342,11 @@ ul.sessions > li { padding: .85rem 1.1rem; border-bottom: 1px solid var(--line);
 ul.sessions > li:last-child { border-bottom: 0; }
 ul.sessions > li:hover { background: var(--surface-2); }
 .sname { font-weight: 600; font-size: .95rem; color: var(--fg); }
+.session-main { min-width: 0; display: grid; gap: .15rem; }
+.session-title { width: fit-content; max-width: 100%; color: var(--fg); font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; border-radius: 5px; transition: color .15s ease, text-shadow .15s ease, background .15s ease; }
+.session-title:hover, .session-title:focus-visible { color: var(--accent); background: var(--accent-soft); text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent); }
+.session-handle { color: var(--muted); font: .78rem var(--mono); }
+.session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
 .srow { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .scounts { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
 ul.sessions .ln { grid-column: 1 / -1; color: var(--fg-2); }

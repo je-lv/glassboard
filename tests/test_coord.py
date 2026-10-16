@@ -117,6 +117,16 @@ def test_leases_are_exclusive_advisory_and_released_by_holder_or_coordinator(b):
     assert [e["type"] for e in b.events()][-3:] == ["lease.taken", "lease.released", "lease.taken"]
 
 
+def test_taking_a_lease_already_held_by_the_same_identity_is_idempotent(b):
+    first = api(b, "POST", "/leases", "jose/claude", {"resource": "docs/faq.md"})
+    head = b.head()
+    again = api(b, "POST", "/leases", "jose/claude", {"resource": "docs/faq.md"})
+    assert again.status_code == 201 and again.json() == {
+        "session": "s1", "seq": first.json()["seq"], "resource": "docs/faq.md", "already_held": True,
+    }
+    assert b.head() == head
+
+
 def test_leases_expire_when_the_holder_goes_idle(b):
     from glassboard.api_coord import expire_leases
     api(b, "POST", "/leases", "jose/claude", {"resource": "service: staging db"})
