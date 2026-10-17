@@ -20,7 +20,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import __version__, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, tokens
+from . import __version__, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
 from . import longpoll, mcp_adapter, textviews, tlsboot, transport
 from .metrics import Metrics
 from .sweeper import Sweeper
@@ -126,6 +126,20 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
             raise ConfigError("Saved separate-board list must contain absolute database paths")
     app.state.admin_external_env_dbs = json.loads(os.environ.get("GLASSBOARD_ADMIN_EXTERNAL_DBS", "[]"))
     app.state.admin_external_dbs = external
+    try:
+        run_roots = run_browser.configured(os.environ.get("GLASSBOARD_ADMIN_RUN_EVIDENCE_ROOTS", "[]"))
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    with database.read() as c:
+        saved_roots = c.execute("SELECT value FROM meta WHERE key='admin_run_evidence_roots_override'").fetchone()
+    if saved_roots is not None:
+        try:
+            run_roots = run_browser.configured(saved_roots["value"], "Saved run-evidence root list")
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+    app.state.admin_run_evidence_env_roots = run_browser.configured(
+        os.environ.get("GLASSBOARD_ADMIN_RUN_EVIDENCE_ROOTS", "[]"))
+    app.state.admin_run_evidence_roots = run_roots
     app.state.plain_http = plain
     app.state.mcp_enabled = use_mcp
     app.state.sweep_interval_s = sweep_interval_s

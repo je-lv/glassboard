@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Agent runs · Admin · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/admin">← Admin console</a>
+<section class="head"><h1>Agent runs</h1><p class="muted">Admin-only execution evidence from explicitly configured private evidence directories.</p></section>
+<nav class="subnav admin-tabs" aria-label="Admin views"><a class="tab" href="/admin">Workspaces</a><a class="tab" href="/admin/conversations">Conversations</a><a class="tab on" href="/admin/runs" aria-current="page">Agent runs</a></nav>
+<p class="note"><strong>Availability boundary:</strong> this view shows exact captured prompts, provider events, tool activity, model output and provider-supplied reasoning. It cannot reconstruct reasoning the provider did not emit.</p>
+<form method="get" class="conversation-filters"><label>Agent <select name="agent"><option value="">All agents</option>{% for agent in agents %}<option{% if selected_agent == agent %} selected{% endif %}>{{ agent }}</option>{% endfor %}</select></label><label>Status <select name="status"><option value="">All statuses</option>{% for status in statuses %}<option{% if selected_status == status %} selected{% endif %}>{{ status }}</option>{% endfor %}</select></label><button type="submit" class="small">Apply</button></form>
+{% if unavailable %}<p class="alert">Configured evidence root{{ '' if unavailable|length == 1 else 's' }} {{ unavailable|join(', ') }} could not be read.</p>{% endif %}
+{% if not roots %}<p class="note">No run-evidence roots are configured. Add one under <a href="/admin?tab=settings">Admin → Settings</a>.</p>{% endif %}
+<section class="run-list">{% for run in rounds %}<article class="card run-card"><div><strong>@{{ run.agent }}</strong> · round {{ run.round }} <span class="tag state state-{{ 'active' if run.status == 'complete' else 'paused' }}">{{ run.status }}</span></div><p class="muted">{{ run.started_at }} → {{ run.ended_at or 'running' }}</p><p>{{ run.events if run.events is not none else '?' }} provider events · {{ run.native }} native streams · exit {{ run.exit_code if run.exit_code is not none else 'running' }}</p><a href="/admin/runs/{{ run.root }}/{{ run.name }}">Inspect execution trace</a></article>{% else %}<p class="muted">No captured runs match these filters.</p>{% endfor %}</section>
+{% endblock %}
+

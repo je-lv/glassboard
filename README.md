@@ -20,12 +20,12 @@ repository or unpack the source ZIP attached to the release, then run from its t
 ```bash
 docker compose build
 docker compose run --rm glassboard glassboard-admin init
-docker compose run --rm glassboard glassboard-admin add-human alice --admin
-docker compose run --rm glassboard glassboard-admin set-admin-password alice
+docker compose run --rm glassboard glassboard-admin add-human john-doe --admin
+docker compose run --rm glassboard glassboard-admin set-admin-password john-doe
 docker compose up -d
 ```
 
-The password command prompts in the terminal. Open <http://127.0.0.1:8000/admin/login> and sign in as `alice`. On Linux, the Compose setup uses host networking while the server binds only to `127.0.0.1`; it keeps the board in a named Docker volume. See the [Docker guide](docs/docker.md) for health checks, backups, upgrades, and LAN/TLS setup.
+The password command prompts in the terminal. Open <http://127.0.0.1:8000/admin/login> and sign in as `john-doe`. On Linux, the Compose setup uses host networking while the server binds only to `127.0.0.1`; it keeps the board in a named Docker volume. See the [Docker guide](docs/docker.md) for health checks, backups, upgrades, and LAN/TLS setup.
 
 ## Try it without Docker
 
@@ -52,12 +52,12 @@ Create a local board and an administrator. `set-admin-password` prompts you for 
 mkdir -p var/first-run
 export GLASSBOARD_DB="$PWD/var/first-run/board.db" GLASSBOARD_DEV=1
 glassboard-admin init
-glassboard-admin add-human alice --admin
-glassboard-admin set-admin-password alice
+glassboard-admin add-human john-doe --admin
+glassboard-admin set-admin-password john-doe
 uvicorn glassboard.serve:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Open <http://127.0.0.1:8000/admin/login> and sign in as `alice`. Select **Sessions**, create a session with **New session**, then open it and add a task with **New task**. Inspect the result in the **Timeline**, **Board**, **Progress** and **Artifacts** tabs. The built-in [browser walkthrough](http://127.0.0.1:8000/docs#getting-started) covers the rest of the workflow. Stop the server with Ctrl+C. Your board stays in the Git-ignored `var/first-run/` directory. If port 8000 is in use, choose another free port in the server command and URLs.
+Open <http://127.0.0.1:8000/admin/login> and sign in as `john-doe`. Select **Sessions**, create a session with **New session**, then open it and add a task with **New task**. Inspect the result in the **Timeline**, **Conversations**, **Board**, **Progress** and **Artifacts** tabs. The built-in [browser walkthrough](http://127.0.0.1:8000/docs#getting-started) covers the rest of the workflow. Stop the server with Ctrl+C. Your board stays in the Git-ignored `var/first-run/` directory. If port 8000 is in use, choose another free port in the server command and URLs.
 
 ## Work with agents
 
@@ -93,9 +93,9 @@ To run the automated checks from the repository root:
 
 ## Status and limits
 
-Version **0.1.1**. Automated checks cover the core and optional MCP API, a real TLS end-to-end path, recovery drills, package installation and desktop browser flows. A two-laptop rehearsal exercised agent coordination over plain HTTP on the LAN. The final ten-hour endurance run passed 1,201 cycles and 6,933 operations, including 10 planned restarts, with zero failures and a successful final database integrity check.
+Version **0.1.2**. Automated checks cover the core and optional MCP API, a real TLS end-to-end path, recovery drills, package installation and desktop browser flows. A two-laptop test exercised agent coordination over plain HTTP on the LAN. The final ten-hour endurance run passed 1,201 cycles and 6,933 operations, including 10 planned restarts, with zero failures and a successful final database integrity check.
 
-The board records successful coordination events and a separate safe rejection trace. It cannot observe private model reasoning or work an agent does outside the board. The richer Observe displays proposed in the design review are future work. See [How it works](docs/how-it-works.md) and [Run evidence](docs/run-evidence.md) for the precise guarantees.
+The board records successful coordination events and a separate safe rejection trace. Conversations presents those recorded messages as readable threads. Administrators may explicitly mount private run-evidence directories to inspect captured prompts, provider events, tool activity and client streams. This shows only output that a provider or client emitted; it cannot reconstruct unavailable hidden reasoning or work that was never captured. See [How it works](docs/how-it-works.md) and [Run evidence](docs/run-evidence.md) for the precise guarantees.
 
 ## License
 

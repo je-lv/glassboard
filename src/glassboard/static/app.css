@@ -432,6 +432,58 @@ button.copy:hover { background: var(--surface-2); }
 .timeline > .ln:first-child { padding-top: .6rem; }
 .timeline > h2 { margin-top: .5rem; }
 
+/* Human-readable conversation and admin execution-trace views. */
+.conversation-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .55rem .8rem; margin: 0 0 .75rem;
+  padding: .8rem; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.conversation-filters label { margin: 0; font-size: .75rem; }
+.conversation-filters input, .conversation-filters select { min-width: 8rem; padding: .38rem .5rem; }
+.conversation-filters input[type="search"] { min-width: min(20rem, 70vw); }
+.conversation-filters .checkbox-row { align-self: center; margin-top: 1.1rem; }
+.conversation-filters button { margin: 0 0 .05rem; }
+.conversation-summary { margin: 0 0 .75rem; color: var(--muted); font-size: .8rem; }
+.conversation-stream { display: grid; gap: .7rem; }
+.message-card { --message-color: var(--accent); min-width: 0; padding: .7rem .85rem; border: 1px solid var(--line);
+  border-left: 3px solid var(--message-color); border-radius: 8px; background: var(--surface); scroll-margin-top: 1rem; }
+.message-card.focused, .message-card:target { outline: 2px solid color-mix(in srgb, var(--message-color) 48%, transparent); background: var(--accent-soft); }
+.message-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .55rem; }
+.message-head time, .message-routing { color: var(--muted); font-size: .74rem; }
+.message-seq { margin-left: auto; font: 650 .75rem var(--mono); }
+.message-routing { display: flex; flex-wrap: wrap; gap: .3rem .75rem; margin: .45rem 0; }
+.message-body { margin: .65rem 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); line-height: 1.6; }
+.long-message { margin: .35rem 0; }.long-message summary { display: block; cursor: pointer; list-style: none; }
+.long-message summary::-webkit-details-marker { display: none; }.message-preview { display: block; }.long-message[open] .message-preview { display: none; }
+.show-full { display: inline-block; margin-top: .1rem; color: var(--accent); font-size: .76rem; font-weight: 650; }
+.long-message[open] .show-full { font-size: 0; }.long-message[open] .show-full::after { content: "Hide full message"; font-size: .76rem; }.message-structured { margin: .5rem 0; }
+.message-structured > summary { color: var(--accent); cursor: pointer; font-size: .76rem; font-weight: 600; }
+.message-fields { display: grid; gap: .35rem; margin: .65rem 0; }
+.message-fields > div { display: grid; grid-template-columns: minmax(6rem, .18fr) 1fr; gap: .5rem; padding: .35rem .5rem; background: var(--surface-2); border-radius: 6px; }
+.message-fields dt { color: var(--muted); font: 650 .72rem var(--mono); overflow-wrap: anywhere; }
+.message-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-refs { margin: .5rem 0; padding-left: 1.25rem; font-size: .78rem; overflow-wrap: anywhere; }
+.message-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin-top: .55rem; font-size: .76rem; }
+.thread-index { display: grid; gap: .55rem; }
+.thread-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: .8rem .9rem;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface); }
+.thread-needs-attention { border-left-color: var(--st-blocked); }.thread-card-main { min-width: 0; }
+.thread-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; font-size: .78rem; }
+.thread-preview { margin: .45rem 0 .3rem; white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; line-height: 1.45; }.thread-participants { margin: 0; font-size: .74rem; overflow-wrap: anywhere; }
+.thread-card-activity { display: grid; justify-items: end; gap: .2rem; min-width: 9.5rem; color: var(--muted); font-size: .74rem; }
+.thread-card-activity strong { color: var(--fg); }.thread-card-activity .button { margin-top: .25rem; }
+.attention-tag { color: var(--st-blocked); }.thread-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .7rem;
+  align-items: center; margin-bottom: .75rem; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.focused-thread { position: relative; padding-left: .75rem; border-left: 2px solid var(--line-strong); }
+.reply-composer { margin-top: 1rem; scroll-margin-top: 1rem; }.reply-composer h2 { margin-bottom: .2rem; }
+.reply-fields { display: grid; grid-template-columns: minmax(8rem, .3fr) 1fr; gap: .7rem; }.reply-fields label { margin-top: 0; }
+.conversation-more { text-align: center; }.conversation-workspace-picker { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+.conversation-workspace-picker label { flex: 1 1 22rem; margin: 0; }.conversation-workspace-picker button { margin: 0; }
+.run-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: .7rem; }
+.run-card { margin: 0; }.run-card p { margin: .4rem 0; }
+.trace-pre, .trace-event pre { max-height: 36rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-trace { margin-top: 1rem; }.trace-event { margin: .65rem 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.trace-event header { display: flex; justify-content: space-between; align-items: center; gap: .7rem; padding: .45rem .65rem; border-bottom: 1px solid var(--line); }
+.trace-event pre { margin: 0; padding: .7rem; background: var(--surface-2); font: 12px/1.55 var(--mono); }
+
 @media (max-width: 640px) {
   header.top { gap: .6rem; padding: 0 .75rem; }
   .brand-name { font-size: 1rem; }
@@ -442,6 +494,9 @@ button.copy:hover { background: var(--surface-2); }
   .joincode { font-size: 1.4rem; letter-spacing: .06em; }
   .steps { grid-template-columns: 1fr; }
   .chips .spacer { display: none; }
+  .message-fields > div, .reply-fields { grid-template-columns: 1fr; }
+  .thread-card { grid-template-columns: 1fr; }.thread-card-activity { justify-items: start; grid-template-columns: auto auto; gap: .3rem .7rem; }
+  .thread-card-activity .button { grid-column: 1 / -1; }.focused-thread { padding-left: .4rem; }
 }
 @media (max-width: 440px) { .brand-name { display: none; } }
 

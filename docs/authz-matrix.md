@@ -142,13 +142,18 @@ Routes checked: 67 · cells: 995 · violations: 0 · unclassified routes: 0
 - `/admin/access/password`: dashboard admin password reset: experimental, browser authorization checks pending
 - `/admin/backups/create`: dashboard encrypted backup: experimental, browser authorization checks pending
 - `/admin/backups/{name}`: dashboard admin backup download: experimental, browser authorization checks pending
+- `/admin/conversations`: dashboard admin conversation explorer: tests/test_conversations_runs.py
 - `/admin/credentials/create`: dashboard admin token mint: experimental, browser authorization checks pending
 - `/admin/credentials/revoke`: dashboard admin token revoke: experimental, browser authorization checks pending
 - `/admin/external/{index}/s/{s}`: dashboard admin read-only separate-board inspection: tests/test_dashboard.py
 - `/admin/login`: dashboard admin password authentication: tests/test_dashboard.py
 - `/admin/password`: dashboard admin password change: tests/test_dashboard.py
+- `/admin/runs`: dashboard private run-evidence explorer: tests/test_conversations_runs.py
+- `/admin/runs/{root_index}/{round_name}`: dashboard private run detail: tests/test_conversations_runs.py
+- `/admin/runs/{root_index}/{round_name}/files/{filename}`: dashboard captured file viewer: tests/test_conversations_runs.py
 - `/admin/s/{s}`: dashboard admin read-only session inspection: tests/test_dashboard.py
 - `/admin/settings/boards`: dashboard separate-board settings: experimental, browser authorization checks pending
+- `/admin/settings/run-evidence`: dashboard private run-evidence settings: tests/test_conversations_runs.py
 - `/admin/workspace-archives/{archive_id}`: dashboard admin verified workspace archive download: tests/test_workspace_cleanup.py
 - `/admin/workspaces/archive`: dashboard admin verified workspace export: tests/test_workspace_cleanup.py
 - `/admin/workspaces/purge`: dashboard admin guarded workspace purge: tests/test_workspace_cleanup.py
@@ -172,6 +177,7 @@ Routes checked: 67 · cells: 995 · violations: 0 · unclassified routes: 0
 - `/s/{s}/artifacts/upload`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/artifacts/{artifact_id}/download`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/board`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
+- `/s/{s}/conversations`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/invite`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/job-role`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/members`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Conversations · Admin · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/admin">← Admin console</a>
+<section class="head"><h1>Conversation explorer</h1><p class="muted">Search and read messages from every participant. Operational events are available without replacing the canonical timeline.</p></section>
+<nav class="subnav admin-tabs" aria-label="Admin views"><a class="tab" href="/admin">Workspaces</a><a class="tab on" href="/admin/conversations" aria-current="page">Conversations</a><a class="tab" href="/admin/runs">Agent runs</a></nav>
+<form method="get" class="card conversation-workspace-picker"><label>Workspace <select name="session"><option value="">All workspaces</option>{% for row in sessions_list %}<option value="{{ row.handle }}"{% if sess and sess.handle == row.handle %} selected{% endif %}>{{ row.handle }} · {{ row.state }} · head #{{ row.head_seq }}</option>{% endfor %}</select></label><button type="submit">Open conversations</button></form>
+{% if not sess %}<p class="note">All-workspace mode is read-only. Select a workspace to reply in its visible audit record.</p>{% endif %}
+{% if convo %}
+  {% if sess and not can_reply %}<p class="note">You are inspecting this workspace as an administrator. Join it visibly as a Session Manager before replying.</p>{% endif %}
+  {% set admin_mode = true %}{% include "conversation-list.html" %}
+{% endif %}
+{% endblock %}
+

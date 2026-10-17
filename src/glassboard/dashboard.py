@@ -39,7 +39,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
-from . import admin_auth, db, events, idempotency, ids, inbox, journal, observe, render, routing, sessions, tlsboot, tokens
+from . import admin_auth, conversations, db, events, idempotency, ids, inbox, journal, observe, render, routing, run_browser, sessions, tlsboot, tokens
 from .api_messages import MessageIn, send_message
 from .deps import client_addr, get_db
 from .errors import ApiError
@@ -515,6 +515,8 @@ def mount(app: FastAPI) -> None:
         settings = {"hosts": request.app.state.allowed_hosts, "plain_http": request.app.state.plain_http,
                     "mcp": request.app.state.mcp_enabled, "external_dbs": request.app.state.admin_external_dbs,
                     "external_env_dbs": request.app.state.admin_external_env_dbs,
+                    "run_evidence_roots": request.app.state.admin_run_evidence_roots,
+                    "run_evidence_env_roots": request.app.state.admin_run_evidence_env_roots,
                     "ca_published": Path(request.app.state.ca_file).is_file(),
                     "journal_exists": Path(request.app.state.journal_path).is_file(),
                     "sweep_interval": request.app.state.sweep_interval_s,
@@ -662,6 +664,46 @@ def mount(app: FastAPI) -> None:
                       (ids.new_ulid(), db.utcnow(), viewer.p.id, "admin_external_boards.update", None,
                        json.dumps({"action": action, "before": current, "after": updated})))
         request.app.state.admin_external_dbs = updated
+        return _security_headers(RedirectResponse("/admin?tab=settings", status_code=303))
+
+    @app.post("/admin/settings/run-evidence", include_in_schema=False)
+    async def admin_run_evidence_roots(request: Request, viewer: Viewer = Depends(current_viewer),
+                                       database: db.Database = Depends(get_db)):
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        _require_admin(viewer)
+        action = form.get("action", "")
+        current = list(request.app.state.admin_run_evidence_roots)
+        if action == "add":
+            path = form.get("path", "").strip()
+            candidate = Path(path)
+            if not candidate.is_absolute() or path in current or candidate.is_symlink() or not candidate.is_dir():
+                raise ApiError(422, "invalid_request", "Enter a new absolute run-evidence directory.")
+            updated = [*current, path]
+        elif action == "remove":
+            try:
+                index = int(form.get("index", ""))
+            except ValueError:
+                raise ApiError(422, "invalid_request", "Invalid run-evidence root selection.") from None
+            if index < 0 or index >= len(current) or form.get("confirm") != "1":
+                raise ApiError(422, "confirmation_required", "Confirm the run-evidence root to remove.")
+            updated = [path for n, path in enumerate(current) if n != index]
+        elif action == "reset":
+            if form.get("confirm") != "1":
+                raise ApiError(422, "confirmation_required", "Confirm reset to host configuration.")
+            updated = list(request.app.state.admin_run_evidence_env_roots)
+        else:
+            raise ApiError(422, "invalid_request", "Unknown settings action.")
+        with database.write() as c:
+            if action == "reset":
+                c.execute("DELETE FROM meta WHERE key='admin_run_evidence_roots_override'")
+            else:
+                c.execute("INSERT INTO meta(key,value) VALUES ('admin_run_evidence_roots_override',?) "
+                          "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(updated),))
+            c.execute("INSERT INTO audit(id,ts,actor_id,action,target,data) VALUES (?,?,?,?,?,?)",
+                      (ids.new_ulid(), db.utcnow(), viewer.p.id, "admin_run_evidence_roots.update", None,
+                       json.dumps({"action": action, "before": current, "after": updated})))
+        request.app.state.admin_run_evidence_roots = updated
         return _security_headers(RedirectResponse("/admin?tab=settings", status_code=303))
 
     @app.post("/admin/access/create", include_in_schema=False)
@@ -1155,6 +1197,137 @@ def mount(app: FastAPI) -> None:
                                     "display_name": render.r2(m["display_name"])} for m in members),
                                   key=lambda m: (TEAM_ORDER.index(m["title"]), m["handle"])),
                 "query": urllib.parse.urlencode(query)}
+
+    def _conversation_options(request: Request) -> dict:
+        task_raw = request.query_params.get("task", "")
+        before_raw = request.query_params.get("before", "")
+        event_raw = request.query_params.get("event", "")
+        thread_raw = request.query_params.get("thread", "")
+        reply_raw = request.query_params.get("reply", "")
+        requested_mode = request.query_params.get("mode", "threads")
+        mode = {"threaded": "threads", "linear": "all"}.get(requested_mode, requested_mode)
+        return {
+            "mode": mode if mode in ("threads", "thread", "all") else "threads",
+            "author": request.query_params.get("author", "")[:80],
+            "kind": request.query_params.get("kind", "")[:80],
+            "q": request.query_params.get("q", "")[:200],
+            "task": int(task_raw) if task_raw.isdigit() else None,
+            "before": int(before_raw) if before_raw.isdigit() else None,
+            "event": int(event_raw) if event_raw.isdigit() else None,
+            "thread": int(thread_raw) if thread_raw.isdigit() else None,
+            "reply": int(reply_raw) if reply_raw.isdigit() else None,
+            "include_system": request.query_params.get("system") == "1",
+        }
+
+    def _conversation_ctx(c, sess, options: dict) -> dict:
+        result = conversations.page(c, sess, author=options["author"], kind=options["kind"],
+                                    query=options["q"], task=options["task"],
+                                    include_system=options["include_system"], before=options["before"],
+                                    thread=options["thread"], reply=options["reply"])
+        query = {"mode": options["mode"]}
+        for key in ("author", "kind", "q", "task", "event", "thread", "reply"):
+            if options[key] not in (None, ""):
+                query[key] = options[key]
+        if options["include_system"]:
+            query["system"] = "1"
+        result["older_query"] = urllib.parse.urlencode({**query, "before": result["older_before"]}) \
+            if result["older_before"] else None
+        return {**options, **result}
+
+    def _global_conversation_ctx(c, options: dict) -> dict:
+        result = conversations.global_page(c, author=options["author"], kind=options["kind"],
+                                           query=options["q"], task=options["task"],
+                                           include_system=options["include_system"], before=options["before"],
+                                           thread=options["thread"], reply=options["reply"])
+        query = {"mode": options["mode"]}
+        for key in ("author", "kind", "q", "task", "event", "thread", "reply"):
+            if options[key] not in (None, ""):
+                query[key] = options[key]
+        if options["include_system"]:
+            query["system"] = "1"
+        result["older_query"] = urllib.parse.urlencode({**query, "before": result["older_before"]}) \
+            if result["older_before"] else None
+        return {**options, **result}
+
+    @app.get("/s/{s}/conversations", include_in_schema=False)
+    def conversations_page(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                           database: db.Database = Depends(get_db)):
+        options = _conversation_options(request)
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            convo = _conversation_ctx(c, sess, options)
+            members = [r[0] for r in c.execute(
+                "SELECT p.handle FROM member m JOIN principal p ON p.id=m.principal_id "
+                "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
+        return page("conversations.html", viewer=viewer, sess=sess, convo=convo, members=members,
+                    can_reply=viewer.p.scope == "full" and me["role"] != "observer",
+                    admin_mode=False, sessions_list=[], op=ids.new_ulid(), error=request.query_params.get("err"))
+
+    @app.get("/admin/conversations", include_in_schema=False)
+    def admin_conversations(request: Request, viewer: Viewer = Depends(current_viewer),
+                            database: db.Database = Depends(get_db)):
+        _require_admin(viewer)
+        selected = request.query_params.get("session", "")
+        options = _conversation_options(request)
+        with database.read() as c:
+            session_rows = [dict(r) for r in c.execute(
+                "SELECT handle,title,state,head_seq FROM session ORDER BY updated_at DESC")]
+            sess = sessions.find_session(c, selected) if selected else None
+            if selected and sess is None:
+                raise ApiError(404, "not_found", "Workspace not found.")
+            if sess is None:
+                convo = _global_conversation_ctx(c, options)
+                return page("admin_conversations.html", viewer=viewer, sess=None, convo=convo,
+                            sessions_list=session_rows, members=[], can_reply=False, op=ids.new_ulid(),
+                            error=request.query_params.get("err"))
+            convo = _conversation_ctx(c, sess, options)
+            members = [r[0] for r in c.execute(
+                "SELECT p.handle FROM member m JOIN principal p ON p.id=m.principal_id "
+                "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
+            me = c.execute("SELECT role FROM member WHERE session_id=? AND principal_id=? AND left_at IS NULL",
+                           (sess["id"], viewer.p.id)).fetchone()
+        return page("admin_conversations.html", viewer=viewer, sess=sess, convo=convo,
+                    sessions_list=session_rows, members=members,
+                    can_reply=bool(me and me["role"] != "observer"), op=ids.new_ulid(),
+                    error=request.query_params.get("err"))
+
+    @app.get("/admin/runs", include_in_schema=False)
+    def admin_runs(request: Request, viewer: Viewer = Depends(current_viewer)):
+        _require_admin(viewer)
+        rounds, unavailable = run_browser.list_rounds(request.app.state.admin_run_evidence_roots)
+        agent = request.query_params.get("agent", "")
+        status = request.query_params.get("status", "")
+        shown = [r for r in rounds if (not agent or r["agent"] == agent) and (not status or r["status"] == status)]
+        return page("admin_runs.html", viewer=viewer, rounds=shown, total=len(rounds), unavailable=unavailable,
+                    roots=request.app.state.admin_run_evidence_roots,
+                    agents=sorted({r["agent"] for r in rounds}), statuses=sorted({r["status"] for r in rounds}),
+                    selected_agent=agent, selected_status=status)
+
+    @app.get("/admin/runs/{root_index}/{round_name}", include_in_schema=False)
+    def admin_run_detail(root_index: int, round_name: str, request: Request,
+                         viewer: Viewer = Depends(current_viewer)):
+        _require_admin(viewer)
+        before_raw = request.query_params.get("before", "")
+        before = int(before_raw) if before_raw.isdigit() else None
+        try:
+            run = run_browser.detail(request.app.state.admin_run_evidence_roots, root_index, round_name,
+                                     before=before)
+        except LookupError:
+            raise ApiError(404, "not_found", "Agent run not found.") from None
+        return page("admin_run.html", viewer=viewer, run=run)
+
+    @app.get("/admin/runs/{root_index}/{round_name}/files/{filename}", include_in_schema=False)
+    def admin_run_file(root_index: int, round_name: str, filename: str, request: Request,
+                       viewer: Viewer = Depends(current_viewer)):
+        _require_admin(viewer)
+        before_raw = request.query_params.get("before", "")
+        before = int(before_raw) if before_raw.isdigit() else None
+        try:
+            capture = run_browser.file_detail(request.app.state.admin_run_evidence_roots, root_index,
+                                              round_name, filename, before=before)
+        except LookupError:
+            raise ApiError(404, "not_found", "Captured file not found.") from None
+        return page("admin_run_file.html", viewer=viewer, capture=capture)
 
     @app.get("/s/{s}", include_in_schema=False)
     def session_page(s: str, request: Request, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
@@ -1741,13 +1914,20 @@ def mount(app: FastAPI) -> None:
                        database: db.Database = Depends(get_db)):
         form = await form_data(request)
         check_post(request, form, viewer)
+        return_to = form.get("return_to", "")
+        destination = f"/s/{urllib.parse.quote(s)}/conversations" if return_to == "conversations" \
+            else f"/s/{urllib.parse.quote(s)}"
+        return_thread = form.get("return_thread", "")
+        if return_to == "conversations" and return_thread.isdigit():
+            destination += "?mode=thread&thread=" + return_thread
         to = [h.strip() for h in form.get("to", "").split(",") if h.strip()]
         try:
             body = MessageIn(kind=form.get("kind", ""), body=form.get("body", ""), to=to,
                              re=int(form["re"]) if form.get("re", "").isdigit() else None,
                              preflight_seq=int(form["preflight_seq"]) if form.get("preflight_seq", "").isdigit() else None)
         except ValidationError:
-            return _security_headers(RedirectResponse(f"/s/{urllib.parse.quote(s)}?err=invalid", status_code=303))
+            separator = "&" if "?" in destination else "?"
+            return _security_headers(RedirectResponse(f"{destination}{separator}err=invalid", status_code=303))
         key = form.get("op", "")
         if not (8 <= len(key) <= 64):
             key = ids.new_ulid()
@@ -1759,9 +1939,11 @@ def mount(app: FastAPI) -> None:
                             message="The board was restored since this page was loaded. Reload it and post again.")
             if e.code in ("recipient_not_member", "forbidden", "not_found", "invalid_request", "invalid_preflight", "rate_limited",
                           "payload_too_large", "idempotency_key_reused"):
-                return _security_headers(RedirectResponse(f"/s/{urllib.parse.quote(s)}?err={e.code}", status_code=303))
+                separator = "&" if "?" in destination else "?"
+                return _security_headers(RedirectResponse(f"{destination}{separator}err={e.code}", status_code=303))
             raise
-        return _security_headers(RedirectResponse(f"/s/{urllib.parse.quote(s)}", status_code=303))
+        anchor = f"#message-{body.re}" if return_to == "conversations" and body.re else ""
+        return _security_headers(RedirectResponse(destination + anchor, status_code=303))
 
     @app.post("/s/{s}/preflight", include_in_schema=False)
     async def preflight_box(s: str, request: Request, viewer: Viewer = Depends(current_viewer),

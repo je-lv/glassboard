@@ -7,7 +7,7 @@
   <p>{{ title }}</p>
   <p class="meta">Head #{{ sess.head_seq }} · Epoch {{ sess.epoch }} · {{ "Autonomous" if sess.autonomous else "Human coordinated" }}</p>
   {% if external %}<p class="note">Live read-only view from the agent board. Team actions stay on that board until the run finishes.</p>{% endif %}
-  {% if joined %}<p><a href="/s/{{ sess.handle }}">Open session workspace</a></p>{% endif %}
+  <p><a href="/admin/conversations?session={{ sess.handle }}">Open readable conversations</a>{% if joined %} · <a href="/s/{{ sess.handle }}">Open session workspace</a>{% endif %}</p>
 </section>
 <section class="admin-inspect-board" aria-labelledby="admin-board-title">
   <h2 id="admin-board-title">Board</h2>

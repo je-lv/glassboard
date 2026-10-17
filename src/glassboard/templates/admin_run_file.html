@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ capture.filename }} · {{ capture.name }} · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/admin/runs/{{ capture.root }}/{{ capture.name }}">← {{ capture.name }}</a>
+<section class="head"><h1>{{ capture.filename }}</h1><p class="muted">Admin-only captured execution evidence · {{ capture.bytes }} bytes. Content is displayed as text with invalid UTF-8 replaced.</p></section>
+{% if capture.too_large %}<p class="alert">This file exceeds the {{ 16 * 1024 * 1024 }}-byte browser-view limit. Inspect it on the host.</p>
+{% else %}<section class="run-trace">{% for line in capture.lines %}<article class="trace-event" id="line-{{ line.number }}"><header><a href="#line-{{ line.number }}">line {{ line.number }}</a></header><pre>{{ line.text }}</pre></article>{% else %}<p class="muted">The captured file is empty.</p>{% endfor %}</section>{% endif %}
+{% if capture.older_before %}<p><a class="button secondary" href="?before={{ capture.older_before }}">Load older lines</a></p>{% endif %}
+{% endblock %}

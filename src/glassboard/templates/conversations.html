@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Conversations · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<section class="head"><h1>Conversations · {{ sess.handle }}</h1><p class="muted">Readable messages and reply threads from the shared, append-only session record.</p></section>
+<nav class="subnav" aria-label="session">
+  <a class="tab" href="/s/{{ sess.handle }}">Timeline</a><a class="tab on" href="/s/{{ sess.handle }}/conversations" aria-current="page">Conversations</a>
+  <a class="tab" href="/s/{{ sess.handle }}/board">Board</a><a class="tab" href="/s/{{ sess.handle }}/progress">Progress</a>
+  <a class="tab" href="/s/{{ sess.handle }}/artifacts">Artifacts</a>{% if experimental_ui %}<a class="tab" href="/s/{{ sess.handle }}/observe">Observe</a>{% endif %}
+</nav>
+{% set admin_mode = false %}{% include "conversation-list.html" %}
+{% endblock %}
+

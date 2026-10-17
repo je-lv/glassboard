@@ -14,6 +14,7 @@
 {% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
 <nav class="subnav" aria-label="session">
   <a class="tab on" href="/s/{{ sess.handle }}" aria-current="page">Timeline</a>
+  <a class="tab" href="/s/{{ sess.handle }}/conversations">Conversations</a>
   <a class="tab" href="/s/{{ sess.handle }}/board">Board</a>
   <a class="tab" href="/s/{{ sess.handle }}/progress">Progress</a>
   <a class="tab" href="/s/{{ sess.handle }}/artifacts">Artifacts</a>

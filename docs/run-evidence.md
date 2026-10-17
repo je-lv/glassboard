@@ -106,3 +106,15 @@ files and `.git`; a second invocation refuses to overwrite the first submission.
 Keep the complete evidence archive private and review any derivative export for credentials before
 sharing. A model provider's private reasoning may not be exposed by its client; this archive
 captures all observable JSON and must not be described as private chain of thought.
+
+## Admin inspection
+
+An operator may set `GLASSBOARD_ADMIN_RUN_EVIDENCE_ROOTS` to a JSON list of absolute evidence
+directories, or add an existing directory in **Admin → Settings**. **Admin → Agent runs** then
+shows the launcher record, exact prompt, structured stdout, stderr and copied native client streams.
+Only administrators can open these pages. The viewer rejects symlinks, path traversal and files
+larger than 16 MiB; it never executes captured content. Treat the source directory as sensitive.
+
+Labels such as “provider reasoning output” classify text actually emitted in a captured stream.
+They do not imply access to provider-internal chain-of-thought, and Glassboard does not synthesize
+or reconstruct reasoning that the provider did not emit.

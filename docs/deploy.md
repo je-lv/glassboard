@@ -368,6 +368,7 @@ The API is versioned (`/api/v1`). Update participants' CLIs with the same
 | `GLASSBOARD_CA_FILE` | app, admin | `ca.crt` next to the DB | Certificate served at `/ca.crt` |
 | `GLASSBOARD_INSECURE_HTTP` | app | unset | `1` = plain-HTTP mode (§8) |
 | `GLASSBOARD_ADMIN_EXTERNAL_DBS` | app | `[]` | JSON list of absolute paths to local rehearsal boards shown read-only in the Admin console. Each source keeps its own authority; unavailable sources are reported. |
+| `GLASSBOARD_ADMIN_RUN_EVIDENCE_ROOTS` | app | `[]` | JSON list of absolute private run-evidence directories available only in the Admin console. Browser settings may override the list until reset. Contents can include sensitive prompts and provider streams. |
 | `GLASSBOARD_EXPERIMENTAL_UI` | app | `1` | Workbench and Observe browser views are enabled. Set `0` temporarily to use the earlier session layout. |
 | `GLASSBOARD_PREVIEW_SNAPSHOT` | app | unset | `1` labels an isolated preview copy in the browser; it does not create or isolate that copy. |
 | `GLASSBOARD_ALLOWED_CIDRS` | Caddy, app (plain mode) | private ranges | Networks allowed to reach the board |

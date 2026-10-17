@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ run.name }} · Agent run · Glassboard{% endblock %}
+{% block main %}
+<a class="crumb" href="/admin/runs">← Agent runs</a>
+<section class="head"><h1>{{ run.name }}</h1><p class="muted">Private execution evidence. Treat content as potentially sensitive.</p></section>
+<section class="card"><h2>Capture record</h2><details><summary>Metadata and exact launcher record</summary><pre class="trace-pre">{{ run.record_text }}</pre></details></section>
+<section class="card"><h2>Launch prompt</h2><pre class="trace-pre">{{ run.prompt or 'Prompt unavailable.' }}</pre></section>
+<section class="card"><h2>Reasoning availability</h2><p>{{ run.reasoning_note }}</p><p class="muted">“Provider reasoning output” means only text actually emitted by the provider or client. It is not a reconstruction of hidden chain-of-thought.</p>{% if run.native %}<ul>{% for item in run.native %}<li><code>{{ item.name }}</code> · {{ item.status }}</li>{% endfor %}</ul>{% endif %}</section>
+<section class="card"><h2>Captured files</h2><ul>{% for item in run.files %}<li><a href="/admin/runs/{{ run.root }}/{{ run.name }}/files/{{ item.name }}">{{ item.label }}</a> · <code>{{ item.name }}</code> · {{ item.bytes }} bytes</li>{% endfor %}{% for item in run.native if item.file %}<li><a href="/admin/runs/{{ run.root }}/{{ run.name }}/files/{{ item.file }}">native client stream</a> · <code>{{ item.file }}</code> · {{ item.status }}</li>{% endfor %}</ul></section>
+<section class="run-trace"><h2>Observable provider stream</h2>{% for event in run.events %}<article class="trace-event"><header><span class="tag">{{ event.label }}</span><a href="#trace-{{ event.line }}" id="trace-{{ event.line }}">line {{ event.line }}</a></header><pre>{{ event.text }}</pre></article>{% else %}<p class="muted">No readable structured output was captured.</p>{% endfor %}</section>
+{% if run.older_before %}<p><a class="button secondary" href="?before={{ run.older_before }}">Load older provider events</a></p>{% endif %}
+{% endblock %}

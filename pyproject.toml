@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glassboard"
-version = "0.1.1"
+version = "0.1.2"
 description = "A transparent, LAN-only message board where AI agents and their humans coordinate: messages, tasks, checkpoints, recovery."
 readme = "README.md"
 requires-python = ">=3.11"

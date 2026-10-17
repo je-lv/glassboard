@@ -1,0 +1,54 @@
+{% import "errors.html" as errs %}
+{% macro conversation_url(workspace, query='') %}{% if admin_mode %}/admin/conversations?session={{ workspace }}{% if query %}&amp;{{ query }}{% endif %}{% else %}/s/{{ workspace }}/conversations{% if query %}?{{ query }}{% endif %}{% endif %}{% endmacro %}
+{% macro message_card(item) %}
+{% set workspace = item.session or sess.handle %}{% set anchor = 'message-' ~ (workspace ~ '-' if item.session else '') ~ item.seq %}
+<article class="message-card actor-card-{{ item.actor_style }}{% if convo.event == item.seq %} focused{% endif %}" id="{{ anchor }}">
+  <header class="message-head">
+    <span class="actor-badge actor-{{ item.actor_style }}" title="@{{ item.actor }}"><span class="actor-mark" aria-hidden="true">{{ item.actor_mark }}</span><span>{{ item.actor_name }}</span></span>
+    <strong class="handle">@{{ item.actor }}</strong><span class="tag message-kind">{{ item.type }}</span>
+    <a class="message-seq" href="{{ conversation_url(workspace, 'mode=thread&thread=' ~ item.thread ~ '&event=' ~ item.seq) }}#{{ anchor }}">#{{ item.seq }}</a>
+    <time datetime="{{ item.ts }}">{{ item.ts[:19].replace('T',' ') }}Z</time>
+  </header>
+  <div class="message-routing">
+    {% if item.session %}<a href="/admin/conversations?session={{ workspace }}"><strong>{{ workspace }}</strong></a>{% endif %}
+    {% if item.to %}<span>to {% if item.to[0] == 'all' %}everyone{% else %}@{{ item.to|join(', @') }}{% endif %}</span>{% endif %}
+    {% if item.task %}<a href="{{ '/admin/conversations?session=' ~ workspace ~ '&task=' ~ item.task if admin_mode else '/s/' ~ workspace ~ '/t/' ~ item.task }}">T{{ item.task }}</a>{% endif %}
+    {% if item.re %}<a href="#message-{{ workspace ~ '-' if item.session else '' }}{{ item.re }}">reply to #{{ item.re }}</a>{% endif %}
+    {% if item.runtime %}<span>runtime {{ item.runtime }}</span>{% endif %}
+  </div>
+  {% if item.body %}{% if item.body_long %}<details class="long-message"><summary><span class="message-body message-preview">{{ item.body_preview }}</span><span class="show-full">Show full message</span></summary><div class="message-body">{{ item.body }}</div></details>{% else %}<div class="message-body">{{ item.body }}</div>{% endif %}{% endif %}
+  {% if item.fields or item.refs %}<details class="message-structured"><summary>Structured details · {{ item.fields|length }} field{{ '' if item.fields|length == 1 else 's' }}{% if item.refs %} · {{ item.refs|length }} reference{{ '' if item.refs|length == 1 else 's' }}{% endif %}</summary>
+    {% if item.fields %}<dl class="message-fields">{% for field in item.fields %}<div><dt>{{ field.key }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl>{% endif %}
+    {% if item.refs %}<ul class="message-refs">{% for ref in item.refs %}<li><strong>{{ ref.label }}</strong> · <code>{{ ref.loc }}</code> · {{ ref.access }}</li>{% endfor %}</ul>{% endif %}
+  </details>{% endif %}
+  <footer class="message-actions"><a href="#{{ anchor }}">Link</a>{% if item.re %}<a href="#message-{{ workspace ~ '-' if item.session else '' }}{{ item.re }}">Parent</a>{% endif %}{% if can_reply %}<a href="{{ conversation_url(workspace, 'mode=thread&thread=' ~ item.thread ~ '&reply=' ~ item.seq) }}#reply-composer">Reply</a>{% endif %}</footer>
+</article>
+{% endmacro %}
+
+{% macro thread_card(thread) %}
+{% set workspace = thread.session or sess.handle %}
+<article class="thread-card{% if thread.attention %} thread-needs-attention{% endif %}">
+  <div class="thread-card-main"><div class="thread-card-meta">{% if thread.session %}<strong>{{ workspace }}</strong>{% endif %}<span class="tag message-kind">{{ thread.root.type }}</span><strong>#{{ thread.id }}</strong>{% if thread.task %}<span>T{{ thread.task }}</span>{% endif %}{% if thread.attention %}<span class="tag attention-tag">{{ thread.attention }} open</span>{% endif %}</div>
+    <p class="thread-preview">{{ thread.root.body_preview or '(No message body)' }}</p><p class="muted thread-participants">{% for actor in thread.participants %}{% if not loop.first %}, {% endif %}@{{ actor }}{% endfor %}</p></div>
+  <div class="thread-card-activity"><strong>{{ thread.count }} message{{ '' if thread.count == 1 else 's' }}</strong><span>last #{{ thread.latest.seq }}</span><time datetime="{{ thread.latest.ts }}">{{ thread.latest.ts[:16].replace('T',' ') }}Z</time><a class="button secondary small" href="{{ conversation_url(workspace, 'mode=thread&thread=' ~ thread.id) }}">Open thread</a></div>
+</article>
+{% endmacro %}
+
+{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
+<form method="get" class="conversation-filters">{% if admin_mode and sess %}<input type="hidden" name="session" value="{{ sess.handle }}">{% endif %}
+  <label>Author <select name="author"><option value="">Everyone</option>{% for handle in convo.authors %}<option value="{{ handle }}"{% if convo.author == handle %} selected{% endif %}>@{{ handle }}</option>{% endfor %}</select></label>
+  <label>Type <select name="kind"><option value="">All message types</option>{% for kind in convo.kinds %}<option value="{{ kind }}"{% if convo.kind == kind %} selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
+  <label>Contains <input type="search" name="q" value="{{ convo.q }}" maxlength="200" placeholder="Search message text"></label><label>Task <input name="task" value="{{ convo.task or '' }}" inputmode="numeric" size="5" placeholder="T#"></label>
+  <label>View <select name="mode"><option value="threads"{% if convo.mode == 'threads' %} selected{% endif %}>Threads</option><option value="all"{% if convo.mode == 'all' %} selected{% endif %}>All messages</option></select></label>
+  <label class="checkbox-row"><input type="checkbox" name="system" value="1"{% if convo.include_system %} checked{% endif %}> Include operational events</label><button type="submit" class="small">Apply</button>
+</form>
+
+{% if convo.mode == 'thread' and convo.selected_thread %}{% set thread = convo.selected_thread %}
+  <nav class="thread-toolbar" aria-label="Thread navigation"><a href="{{ conversation_url(thread.session or sess.handle) }}">← All threads</a><span><strong>Thread #{{ thread.id }}</strong> · {{ thread.count }} messages · {{ thread.participants|length }} participants</span></nav>
+  <section class="conversation-stream focused-thread" aria-label="Thread {{ thread.id }}">{% for item in convo.selected_messages %}{{ message_card(item) }}{% endfor %}</section>
+{% elif convo.mode == 'thread' %}<p class="note">That thread is not present in this page. Return to <a href="{{ conversation_url(sess.handle) if sess else '/admin/conversations' }}">all threads</a>.</p>
+{% elif convo.mode == 'all' %}<div class="conversation-summary"><strong>{{ convo['items']|length }}</strong> messages{% if convo.more %} on this page{% endif %}, shown chronologically.</div><section class="conversation-stream all-messages" aria-label="All conversation messages">{% for item in convo['items'] %}{{ message_card(item) }}{% else %}<p class="muted">No messages match these filters.</p>{% endfor %}</section>
+{% else %}<div class="conversation-summary"><strong>{{ convo.threads|length }}</strong> threads · <strong>{{ convo['items']|length }}</strong> messages{% if convo.more %} on this page{% endif %}. Sorted by latest activity.</div><section class="thread-index" aria-label="Conversation threads">{% for thread in convo.threads %}{{ thread_card(thread) }}{% else %}<p class="muted">No messages match these filters.</p>{% endfor %}</section>{% endif %}
+
+{% if can_reply and convo.mode == 'thread' and convo.reply_item %}{% set target = convo.reply_item %}<section class="card reply-composer" id="reply-composer"><h2>Reply to @{{ target.actor }} · #{{ target.seq }}</h2><p class="muted">Your reply will be appended to thread #{{ target.thread }} in the canonical timeline.</p><form method="post" action="/s/{{ sess.handle }}/post"><input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ sess.recovery_id }}"><input type="hidden" name="op" value="{{ op }}-reply-{{ target.seq }}"><input type="hidden" name="re" value="{{ target.seq }}"><input type="hidden" name="return_to" value="conversations"><input type="hidden" name="return_thread" value="{{ target.thread }}"><div class="reply-fields"><label>Kind <select name="kind">{% for k in ['answer','note','question','update','proposal','blocker','approval'] %}<option{% if (target.type == 'question' and k == 'answer') or (target.type != 'question' and k == 'note') %} selected{% endif %}>{{ k }}</option>{% endfor %}</select></label><label>To <input name="to" value="{{ target.actor if target.actor != viewer.p.handle else '' }}"></label></div><label>Message <textarea name="body" rows="5" maxlength="16384" required autofocus></textarea></label><button type="submit">Post reply</button></form></section>{% endif %}
+{% if convo.older_query and convo.mode != 'thread' %}<p class="conversation-more"><a class="button secondary" href="?{% if admin_mode and sess %}session={{ sess.handle }}&{% endif %}{{ convo.older_query }}">Load older messages</a></p>{% endif %}
