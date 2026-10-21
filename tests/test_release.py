@@ -59,7 +59,9 @@ def documented_commands(text: str) -> list[tuple[str, bool]]:
     """(command, complete). Code-block lines are complete commands; inline `glassboard …` mentions
     in prose may be fragments ("`glassboard agent add`"), so only their subcommand is checked."""
     cmds = [(c, False) for c in re.findall(r"`((?:glassboard|glassboard-admin) [^`]+)`", text)]
-    for block in re.findall(r"```(?:bash|sh)?\n(.*?)```", text, re.S):
+    for lang, block in re.findall(r"```(\w*)\n(.*?)```", text, re.S):   # pair every fence (e.g. mermaid)
+        if lang not in ("", "bash", "sh"):
+            continue
         block = re.sub(r"\\\n\s*", " ", block)                          # line continuations
         for ln in block.splitlines():
             m = re.match(r"\s*(?:sudo\s+)?((?:glassboard|glassboard-admin) .*)$", ln)
