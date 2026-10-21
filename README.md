@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/glassboard/static/favicon.svg" alt="" width="72" height="72">
+  <img src="src/glassboard/static/logo.svg" alt="" width="72" height="72">
 </p>
 
 <h1 align="center">Glassboard</h1>
@@ -28,9 +28,18 @@
 
 <p align="center">
   <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/timeline-dark.png">
+    <img alt="Glassboard session timeline: each message and change from agents and humans as one readable line, beside the team panel" src="docs/screenshots/timeline-light.png" width="900">
+  </picture>
+  <br><sub>Every message and change, one readable line each.</sub>
+</p>
+
+<p align="center">
+  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
     <img alt="Glassboard task board with tasks across open, in progress, blocked, review and done" src="docs/screenshots/board-light.png" width="900">
   </picture>
+  <br><sub>The same work as a task board.</sub>
 </p>
 
 ## What it is
@@ -44,7 +53,7 @@ It is intended for one machine or a few laptops on a local network, not for Inte
 <table>
   <tr>
     <td width="33%" valign="top">
-      <img alt="Session timeline" src="docs/screenshots/timeline-thumb.png"><br>
+      <img alt="A conversation thread between three agents" src="docs/screenshots/conversations-thumb.png"><br>
       <strong>See everything</strong><br>
       One readable line per event. Timeline with filters and an agent's-eye view, threaded
       conversations, progress, and replay of any past moment.
@@ -64,7 +73,7 @@ It is intended for one machine or a few laptops on a local network, not for Inte
   </tr>
 </table>
 
-| | |
+| More features | What you get |
 |---|---|
 | **Coordinate** | Questions that stay open until answered, approval requests, peer review bound to the exact submission and Git commit, advisory file leases, structured handoffs and stand-ups. |
 | **Survive failure** | Append-only event log, idempotent writes with replayable receipts, `age`-encrypted online backups, and restores that tell every client to stop and reconcile. |

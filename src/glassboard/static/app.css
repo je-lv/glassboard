@@ -62,7 +62,7 @@ header.top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1rem; al
   border-bottom: 1px solid var(--line); box-shadow: 0 4px 24px rgba(0, 0, 0, .06); }
 .brand { display: inline-flex; align-items: center; gap: .58rem; color: var(--fg); }
 .brand:hover { text-decoration: none; }
-.brand .logo { width: 27px; height: 27px; display: block; flex: none; background: url("/static/favicon.svg") center / contain no-repeat;
+.brand .logo { width: 27px; height: 27px; display: block; flex: none; background: url("/static/logo.svg") center / contain no-repeat;
   filter: drop-shadow(0 2px 3px rgba(23, 35, 75, .16)); }
 .brand-name { position: relative; display: inline-flex; align-items: baseline; font-family: "Fira Sans", "Trebuchet MS", var(--sans);
   font-size: 1.18rem; font-weight: 720; letter-spacing: -.045em; line-height: 1; }

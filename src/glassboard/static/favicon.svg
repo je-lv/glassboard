@@ -1,8 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
   <title id="title">Glassboard</title>
-  <rect x="2" y="2" width="44" height="44" rx="12" fill="#17234b"/>
-  <path d="M9 14.5 31.5 9 37 32 14.5 37.5Z" fill="#55cbd2" fill-opacity=".86"/>
-  <rect x="16" y="11" width="23" height="25" rx="3.5" fill="#a58df5" fill-opacity=".89"/>
-  <path d="M20 17.5h13M20 23h8" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-  <rect x="30.5" y="28.5" width="5" height="5" rx="1.4" fill="#ffc46c"/>
+  <!-- the logo.svg mark on a dark tile, so it keeps its contrast in light and dark browser tabs -->
+  <rect x="1" y="1" width="46" height="46" rx="11" fill="#0b1630"/>
+  <g transform="translate(6.5 6.5) scale(.73)">
+    <path d="M24 3 42 13.4 34.6 17.7 24 11.6 13.6 17.6v12.8L24 36.4l10.4-6V29H24v-7.4h18v12.9L24 45 6 34.6V13.4Z" fill="#5fdde6"/>
+    <path d="M6 34.6 24 45V36.4L13.6 30.4Z" fill="#06535c"/>
+    <path d="M24 45 42 34.6V21.6h-7.6v8.8L24 36.4Z" fill="#086b75"/>
+  </g>
 </svg>

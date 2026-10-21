@@ -29,7 +29,7 @@ VER=$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/pyproject.toml")
 
 # 2. contents: templates, static files, SQL migrations and the licence travel with the wheel
 LIST=$("$WORK/build/bin/python" -c "import zipfile,sys; print('\n'.join(zipfile.ZipFile(sys.argv[1]).namelist()))" "$WHL")
-for f in glassboard/sql/001_b0a.sql glassboard/sql/013_artifacts.sql glassboard/sql/016_purge_actor_history.sql glassboard/templates/base.html glassboard/templates/artifacts.html glassboard/static/app.css glassboard/static/poll.js glassboard/static/artifacts.js glassboard/static/favicon.svg glassboard/static/guide-timeline.png glassboard/static/guide-board.png \
+for f in glassboard/sql/001_b0a.sql glassboard/sql/013_artifacts.sql glassboard/sql/016_purge_actor_history.sql glassboard/templates/base.html glassboard/templates/artifacts.html glassboard/static/app.css glassboard/static/poll.js glassboard/static/artifacts.js glassboard/static/favicon.svg glassboard/static/logo.svg glassboard/static/guide-timeline.png glassboard/static/guide-board.png \
          glassboard/cli.py glassboard/serve.py; do
   grep -qx "$f" <<<"$LIST" || fail "wheel misses $f"
 done

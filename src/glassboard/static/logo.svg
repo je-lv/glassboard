@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">Glassboard</title>
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5fdde6"/><stop offset="1" stop-color="#0b8f9b"/>
+    </linearGradient>
+  </defs>
+  <!-- hexagonal G, open on the upper right, with its bar into the centre -->
+  <path d="M24 3 42 13.4 34.6 17.7 24 11.6 13.6 17.6v12.8L24 36.4l10.4-6V29H24v-7.4h18v12.9L24 45 6 34.6V13.4Z" fill="url(#face)"/>
+  <!-- darker lower facets: the depth of the glass -->
+  <path d="M6 34.6 24 45V36.4L13.6 30.4Z" fill="#06535c"/>
+  <path d="M24 45 42 34.6V21.6h-7.6v8.8L24 36.4Z" fill="#086b75"/>
+</svg>
