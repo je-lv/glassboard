@@ -147,6 +147,15 @@ def attention(c, p: tokens.Principal) -> dict:
                                   "title": t["title"], "age_s": assignment["assignment_age_s"],
                                   "assignee": t["assignee_handle"],
                                   "assignee_synced_since_assignment": assignment["assignee_synced_since_assignment"]})
+        if p.kind == "human":                       # wakes a supervisor held: the agent's owner and coordinators (E31)
+            for m in c.execute("SELECT m.wake_hold, m.wake_hold_seq, a.handle, a.owner_id, e.ts FROM member m "
+                               "JOIN principal a ON a.id=m.principal_id "
+                               "LEFT JOIN event e ON e.session_id=m.session_id AND e.seq=m.wake_hold_seq "
+                               "WHERE m.session_id=? AND m.left_at IS NULL AND m.wake_secret IS NOT NULL "
+                               "AND m.wake_hold IS NOT NULL ORDER BY a.handle", (sid,)):
+                if m["owner_id"] == p.id or coord:
+                    items.append({"kind": "wake_held", "session": sh, "seq": m["wake_hold_seq"], "from": m["handle"],
+                                  "text": m["wake_hold"][:NOTE_CHARS], "age_s": _age_s(m["ts"]) if m["ts"] else 0})
         if coord:
             rows = c.execute(
                 "SELECT e.* FROM event e WHERE e.session_id=? AND e.type='proposal' AND NOT EXISTS "
@@ -167,7 +176,7 @@ def attention(c, p: tokens.Principal) -> dict:
 
 
 _ATTN = {"review": "review", "review_requested": "your review", "owed": "owed by you", "approval": "approval request", "waiting_on_you": "waiting on you", "stale": "stale", "unacknowledged": "assignment awaiting acknowledgment",
-         "proposal": "proposal", "loop": "loop flag"}
+         "proposal": "proposal", "loop": "loop flag", "wake_held": "wake held"}
 
 
 def attention_text(a: dict) -> str:

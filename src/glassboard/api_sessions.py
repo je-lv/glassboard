@@ -169,9 +169,9 @@ def set_member(s: str, body: MemberSet, request: Request, key: str = Depends(ide
                           " VALUES (?,?,?,?,?,?,?)", (sid, target["id"], body.role, seq, seq - 1, seq - 1, now))
             else:
                 c.execute("UPDATE member SET role=?, job_role=NULL, job_role_version=NULL, joined_seq=?, cursor_seq=?, delivered_seq=?, joined_at=?, left_at=NULL,"
-                          " consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, consumer_gen=consumer_gen+1"
+                          " consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, consumer_gen=consumer_gen+1, wake_inspected=?, " + db.WAKE_RESET_SQL +
                           " WHERE session_id=? AND principal_id=?",
-                          (body.role, seq, seq - 1, seq - 1, now, sid, target["id"]))
+                          (body.role, seq, seq - 1, seq - 1, now, seq - 1, sid, target["id"]))
             return respond(text, 200)
     except journal.JournalWriteError as e:
         raise journal_error(e) from None
@@ -210,8 +210,8 @@ def remove_member(s: str, handle: str, request: Request, key: str = Depends(idem
                 _guard_last_coordinator(c, sid, target["id"])
             e = journal.append(jpath, "member.remove", session_id=sid, principal_id=target["id"])
             journal.apply_entry(c, e)
-            c.execute("UPDATE member SET consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL "
-                      "WHERE session_id=? AND principal_id=?", (sid, target["id"]))
+            c.execute("UPDATE member SET consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, " + db.WAKE_RESET_SQL +
+                      " WHERE session_id=? AND principal_id=?", (sid, target["id"]))
             _, text = tx.event("member.removed", member=target["id"], data={"handle": target["handle"]},
                                receipt=lambda seq: {"member": target["handle"], "removed": True, "seq": seq})
             return respond(text, 200)

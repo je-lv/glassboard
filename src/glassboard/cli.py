@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -16,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import __version__, clistate, ids, profiles, runtime, textviews, tlsboot
+from . import __version__, clistate, ids, livesession, profiles, runtime, textviews, tlsboot
 from .render import error_lines, inline, r2
 
 EXIT_OK, EXIT_USAGE, EXIT_AUTH, EXIT_CONN, EXIT_HTTP, EXIT_CONFIG = 0, 2, 3, 4, 5, 6
@@ -269,6 +270,7 @@ def cmd_join(a) -> int:
     cmd = a.command[1:] if a.command[:1] == ["--"] else a.command
     if cmd:                                                  # launch the client as this identity
         print(f"starting {r2(cmd[0])} as @{r2(j['handle'])}…", file=sys.stderr)
+        livesession.hold_for_client()                         # a wake supervisor sees this client as open (E31)
         runtime.run(cmd)
         return EXIT_OK
     if a.here:
@@ -682,6 +684,14 @@ def deliver(ctx: Ctx, entry: dict) -> dict:
         _set_fence(ctx, entry, result["fence"])           # a claim/reclaim delivered by any later flush
     elif effect == "drop":
         _set_fence(ctx, entry, None)                      # submit/release ended the claim
+    elif effect in ("wake_store", "wake_drop"):           # the wake supervisor's dispatch fence (E30)
+        label = entry.get("runtime", ctx.label)
+        rt = ctx.state.runtime(label)
+        if effect == "wake_store" and result.get("fence"):
+            rt["wake_fence"] = result["fence"]
+        elif effect == "wake_drop":
+            rt.pop("wake_fence", None)
+        ctx.state.save_runtime(label, rt)
     return result
 
 
@@ -804,7 +814,7 @@ def _post_message(a) -> dict:
     if standup:
         msg["standup"] = standup
     if a.to:
-        recipients = [h.strip() for h in a.to.split(",") if h.strip()]
+        recipients = [h.strip() for part in a.to for h in part.split(",") if h.strip()]
         if recipients == ["all"]:
             recipients = []
         elif "all" in recipients:
@@ -1438,6 +1448,11 @@ def _me_view(name: str, a) -> int:
     return EXIT_OK
 
 
+def cmd_wake(a) -> int:
+    from . import wakerun
+    return wakerun.main(a, sys.modules[__name__])
+
+
 def cmd_checkpoint(a) -> int:
     if a.action == "show":
         ctx = open_session(a, allow_reconcile=True)
@@ -1543,7 +1558,7 @@ def build_parser() -> argparse.ArgumentParser:
     jr.add_argument("--json", action="store_true")
     for verb in ("post", "preflight"):
         po = sess(sub.add_parser(verb)); po.add_argument("kind", choices=["question", "answer", "update", "proposal", "blocker", "note", "decision", "approval"], help="message kind; decision is human Session Managers only; approval must name humans with --to")
-        po.add_argument("body", nargs="?", help='message text immediately after KIND, or "-" to read stdin (optional for a stand-up update)'); po.add_argument("--to", help="comma-separated handles; omit it or use 'all' to broadcast")
+        po.add_argument("body", nargs="?", help='message text immediately after KIND, or "-" to read stdin (optional for a stand-up update)'); po.add_argument("--to", action="append", help="comma-separated handles (repeatable); omit it or use 'all' to broadcast")
         po.add_argument("--body", dest="body_option", help='message text; unlike the positional form, may appear after other options')
         po.add_argument("--body-file", metavar="PATH", help='read UTF-8 message text from PATH (or "-" for stdin)')
         po.add_argument("--re", type=int); po.add_argument("--task"); po.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
@@ -1623,19 +1638,44 @@ def build_parser() -> argparse.ArgumentParser:
     le.add_argument("--note"); le.add_argument("--json", action="store_true")
     le.add_argument("--wait", type=int, default=0, metavar="SECONDS", help="take/run: wait in line until it is free")
     le.add_argument("command", nargs="*", help="run: -- COMMAND… to run while holding the lease")
+    wk = sess(sub.add_parser("wake", help="wake idle agents: status, done, and the human-armed supervisor (run)"))
+    wk.add_argument("action", choices=["status", "done", "run", "arm", "pause", "resume", "stop", "disarm"])
+    wk.add_argument("reason", nargs="?", help="pause/resume/stop: why")
+    wk.add_argument("--json", action="store_true"); wk.add_argument("--wait", type=int, default=0, metavar="SECONDS")
+    wk.add_argument("--generation", type=int, help="done: the generation you inspected (a supervisor sets it for you)")
+    wk.add_argument("--client", choices=["claude", "codex", "grok", "opencode", "script"])
+    wk.add_argument("--session-id", help="run: the client's exact session ID to resume")
+    wk.add_argument("--agent-runtime", help="run: the runtime label the agent uses (its inbox consumer)")
+    wk.add_argument("--takeover", metavar="REASON", help="run/arm: replace a supervisor your human confirmed is gone")
+    wk.add_argument("--cwd", help="run: working directory for the client")
+    wk.add_argument("--script", help="run: the program the script adapter starts")
+    wk.add_argument("--attach", metavar="URL", help="run: OpenCode server URL to resume through")
+    wk.add_argument("--prompt-file", help="run: a fixed prompt file (yours, not writable by others)")
+    wk.add_argument("--max-turns", type=int, help="run: per-wake turn cap where the client has one")
+    wk.add_argument("--debounce", type=float, default=30.0, metavar="SECONDS", help="run: let bursts coalesce")
+    wk.add_argument("--max-per-hour", type=int, default=6, help="run: wake budget per hour (then stop)")
+    wk.add_argument("--idle-stops", type=int, default=3, help="run: stop after this many wakes without progress")
+    wk.add_argument("--max-dispatches", type=int, default=0, help="run: stop after this many dispatches (0: no limit)")
+    wk.add_argument("--headless-only", action="store_true",
+                    help="run: you attest this session is never opened in a terminal (for clients with no open-session signal)")
+    wk.add_argument("--recheck", type=float, default=10.0, metavar="SECONDS",
+                    help="run: while a wake is held (session open or unknown), check again this often")
+    wk.add_argument("command", nargs="*", help="run: -- extra client arguments (escalating flags are refused)")
     fl = sess(sub.add_parser("flow", help="cycle times, blocked time, review turnaround, throughput")); fl.add_argument("--json", action="store_true")
     at = sub.add_parser("attention", help="what needs you, across your sessions"); at.add_argument("--json", action="store_true")
     ov = sub.add_parser("overview", help="one line per session"); ov.add_argument("--json", action="store_true")
     return ap
 
 
-def main(argv=None) -> int:
+def _main(argv=None) -> int:
     ap = build_parser()
     a, extra = ap.parse_known_args(argv)
     # argparse subparsers do not support parse_intermixed_args. Preserve the documented positional
     # message form when a quoted body follows options, e.g. `post answer --re 11 "text"`.
     if extra and a.cmd in ("post", "preflight") and a.body is None and len(extra) == 1 and not extra[0].startswith("-"):
         a.body = extra[0]
+    elif extra and a.cmd == "wake" and a.action == "run":
+        a.command = [*a.command, *extra]               # client arguments after `--`; refused flags are checked in run
     elif extra:
         ap.error("unrecognized arguments: " + " ".join(extra))
     if (a.cmd == "task" and a.action not in ("list", "next") and not a.task
@@ -1664,6 +1704,7 @@ def main(argv=None) -> int:
             cmd = a.command[1:] if a.command[:1] == ["--"] else a.command
             if not cmd:
                 raise CliError(EXIT_USAGE, "usage", "usage: glassboard run -- <command> [args...]")
+            livesession.hold_for_client()                     # a wake supervisor sees this client as open (E31)
             runtime.run(cmd)
         if a.cmd == "session":
             return cmd_session_create(a) if a.action == "create" else cmd_session_state(a)
@@ -1671,7 +1712,7 @@ def main(argv=None) -> int:
                 "discovery": cmd_discovery, "env-probe": cmd_env_probe,
                 "sessions": cmd_sessions, "use": cmd_use, "members": cmd_members, "agent": cmd_agent,
                 "token": cmd_token, "role": cmd_role, "post": cmd_post, "preflight": cmd_preflight,
-                "sync": cmd_sync, "watch": cmd_watch, "history": cmd_history, "board": cmd_board, "artifact": cmd_artifact,
+                "sync": cmd_sync, "watch": cmd_watch, "wake": cmd_wake, "history": cmd_history, "board": cmd_board, "artifact": cmd_artifact,
                 "digest": lambda a: _session_view(a, "digest", {"after": a.after}),
                 "decisions": lambda a: _session_view(a, "decisions"), "standup": lambda a: _session_view(a, "standup"),
                 "approval": cmd_approval, "lease": cmd_lease, "flow": lambda a: _session_view(a, "flow"),
@@ -1684,6 +1725,18 @@ def main(argv=None) -> int:
     except ValueError as e:                 # e.g. an invalid session name reaching clistate
         _print_error(CliError(EXIT_USAGE, "usage", str(e)))
         return EXIT_USAGE
+
+
+def main(argv=None) -> int:
+    try:
+        return _main(argv)
+    except OSError as e:                    # local state or config (network errors are CliErrors already)
+        if e.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
+            raise
+        _print_error(CliError(EXIT_CONFIG, "state_unwritable", f"Cannot write {e.filename or 'local CLI state'}.",
+                              {"hint": "Make the CLI state and config directories writable (inside a sandbox, add them "
+                                       "to its writable roots), or point XDG_STATE_HOME / XDG_CONFIG_HOME elsewhere."}))
+        return EXIT_CONFIG
 
 
 if __name__ == "__main__":

@@ -125,6 +125,12 @@ POLICY = {
     ("GET", "/api/v1/me/overview"): AUTHENTICATED,
     ("GET", "/api/v1/sessions/{s}/checkpoints"): SESSION_READ,          # own checkpoint (404 "No such checkpoint." is ok)
     ("POST", "/api/v1/sessions/{s}/checkpoints"): SESSION_WRITE,
+    # Waking idle agents (E30): the caller's own demand; agents arm and record inspections; the fence decides the rest.
+    ("GET", "/api/v1/sessions/{s}/wake"): SESSION_READ,
+    ("POST", "/api/v1/sessions/{s}/wake/arm"): rule(ok=("agent_member", "agent_coord")),
+    ("POST", "/api/v1/sessions/{s}/wake/inspected"): rule(ok=("agent_member", "agent_coord")),
+    **{("POST", f"/api/v1/sessions/{{s}}/wake/{op}"): SESSION_WRITE                     # the fence decides (409)
+       for op in ("dispatch", "hold", "pause", "resume", "stop", "disarm")},
 }
 # Routes this matrix does not cover, each with the reason and where it is tested instead.
 DELEGATED = {
@@ -168,6 +174,12 @@ DELEGATED = {
 DASHBOARD_PREFIX = "/s/"                                    # cookie-authenticated pages: covered by the dashboard tests
 
 BODIES = {
+    ("POST", "/api/v1/sessions/{s}/wake/arm"): lambda ctx: {"adapter": "claude"},
+    ("POST", "/api/v1/sessions/{s}/wake/inspected"): lambda ctx: {"generation": 0},
+    ("POST", "/api/v1/sessions/{s}/wake/dispatch"): lambda ctx: {"fence": "W1-aaaaaaaaaa", "generation": 1},
+    **{("POST", f"/api/v1/sessions/{{s}}/wake/{op}"): (lambda ctx: {"fence": "W1-aaaaaaaaaa", "reason": "r"})
+       for op in ("hold", "pause", "resume", "stop")},
+    ("POST", "/api/v1/sessions/{s}/wake/disarm"): lambda ctx: {"fence": "W1-aaaaaaaaaa"},
     ("POST", "/api/v1/sessions"): lambda ctx: {"handle": f"s{ids.new_ulid()[-8:].lower().replace('0', 'a')}", "title": "t"},
     ("POST", "/api/v1/me/agents"): lambda ctx: {"name": f"a{ids.new_ulid()[-6:].lower()}"},
     ("POST", "/api/v1/me/tokens"): lambda ctx: {},

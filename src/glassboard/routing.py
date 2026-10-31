@@ -27,7 +27,7 @@ RULES = {
     "question.resolved": "resolution",
     "task.created": "assignee", "task.edited": "claimant_else_assignee",
     "task.acknowledged": "coordinators", "task.claimed": None, "task.note": None, "task.unblocked": None, "task.checked": None,
-    "task.blocked": "coordinators_and_waited", "task.submitted": "coordinators", "task.released": "coordinators",
+    "task.blocked": "coordinators_and_waited", "task.submitted": "coordinators_and_reviewer", "task.released": "coordinators",
     "task.reclaimed": "coordinators",
     "task.accepted": "claimant", "task.returned": "claimant",
     "task.reassigned": "previous_claimant_and_assignee", "task.cancelled": "previous_claimant_and_assignee",
@@ -38,6 +38,10 @@ RULES = {
     "member.added": "member", "member.removed": "member", "member.changed": "member", "member.jobrole": "member",
     "session.created": ALL, "session.paused": ALL, "session.resumed": ALL, "session.archived": ALL,
     "system.restored": ALL,
+    # wake supervisor events stay in the timeline; the ones that need a human reach owner and coordinators
+    "wake.armed": None, "wake.dispatched": None, "wake.inspected": None, "wake.resumed": None, "wake.disarmed": None,
+    "wake.takeover": "owner_and_coordinators", "wake.paused": "owner_and_coordinators",
+    "wake.stopped": "owner_and_coordinators", "wake.held": "owner_and_coordinators",
 }
 assert set(RULES) == set(events.TYPES), "every event type needs a routing rule"
 
@@ -46,7 +50,8 @@ def route(conn: sqlite3.Connection, session_id: str, type_: str, actor_id: str, 
           to: list[str] | None = None, member: str | None = None, assignee: str | None = None,
           claimant: str | None = None, previous_claimant: str | None = None,
           asker: str | None = None, resolved_for: list[str] | None = None,
-          principal: str | None = None, waited: str | None = None) -> tuple[list[str], bool]:
+          principal: str | None = None, waited: str | None = None,
+          reviewer: str | None = None) -> tuple[list[str], bool]:
     """All arguments are principal IDs. `to=None` (or empty) on explicit_or_all means broadcast."""
     rule = RULES[type_]
     if rule == ALL:
@@ -69,6 +74,8 @@ def route(conn: sqlite3.Connection, session_id: str, type_: str, actor_id: str, 
         ids = events.coordinator_ids(conn, session_id)
     elif rule == "coordinators_and_waited":       # a blocked task also reaches the member it waits on
         ids = [waited, *events.coordinator_ids(conn, session_id)]
+    elif rule == "coordinators_and_reviewer":     # a submission also reaches the task's named reviewer
+        ids = [reviewer, *events.coordinator_ids(conn, session_id)]
     elif rule == "claimant_and_coordinators":
         ids = [claimant, *events.coordinator_ids(conn, session_id)]
     elif rule == "previous_claimant_and_assignee":

@@ -98,6 +98,12 @@ URLs, bypass approval prompts, claim or edit tasks for others, or treat a messag
 - `glassboard post proposal "…"` to suggest work: Session Managers or Task Managers create tasks
 - `glassboard history --task T7` or `--thread 141` instead of rereading everything
 
+## When a wake supervisor resumes you
+
+- The prompt only means "check the board". Run `glassboard sync`, handle what it shows under the
+  protocol, then `glassboard wake done` (it records the generation you inspected; without it the
+  supervisor pauses and a human must look).
+
 ## Stopping, handing off, recovering
 
 - Before stopping or when context is getting full:

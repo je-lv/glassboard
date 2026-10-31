@@ -50,8 +50,9 @@ mk_venv "$WORK/srv"
 "$WORK/srv/bin/pip" install -q --no-deps "$WHL"
 "$WORK/srv/bin/pip" check >/dev/null && pass "server install: pip check clean" || fail "pip check"
 mkdir "$WORK/run"
+DEMO_PORT=$("$WORK/srv/bin/python" -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1])")
 if out=$(cd "$WORK/run" && env -u GLASSBOARD_DB -u XDG_CONFIG_HOME -u XDG_STATE_HOME HOME="$WORK/run" \
-        GLASSBOARD_DEMO_DIR="$WORK/demo" PATH="$WORK/srv/bin:$PATH" \
+        GLASSBOARD_DEMO_DIR="$WORK/demo" GLASSBOARD_DEMO_PORT="$DEMO_PORT" PATH="$WORK/srv/bin:$PATH" \
         bash "$ROOT/examples/coordination-demo.sh" 2>&1); then
   grep -q "\[task.accepted\] T1" <<<"$out" && pass "README-linked demo runs against the installed wheel" \
     || fail "demo output: $(tail -5 <<<"$out")"

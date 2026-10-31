@@ -15,7 +15,8 @@ STATUS = {
 BOOKMARKS = {"task.submitted", "task.reviewed", "task.returned", "task.accepted", "task.blocked",
              "task.stale", "blocker", "decision", "approval.granted", "approval.denied",
              "session.paused", "session.resumed", "task.reassigned"}
-MECHANICS = {"lease.taken", "lease.released", "lease.expired", "consumer.attached", "consumer.takeover"}
+MECHANICS = {"lease.taken", "lease.released", "lease.expired", "consumer.attached", "consumer.takeover",
+             "wake.armed", "wake.dispatched", "wake.inspected", "wake.resumed", "wake.disarmed"}
 
 
 def _time(value: str) -> datetime:

@@ -207,7 +207,7 @@ def _after_copy(db_path: str, journal_path: str, meta: dict) -> dict:
                 c.execute("UPDATE task SET gen=gen+1, fence_secret=NULL, updated_at=? WHERE session_id=? "
                           "AND status IN ('in_progress','blocked')", (db.utcnow(), sid))
                 c.execute("UPDATE member SET consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, "
-                          "consumer_gen=consumer_gen+1, delivered_seq=cursor_seq WHERE session_id=?", (sid,))
+                          "consumer_gen=consumer_gen+1, delivered_seq=cursor_seq, " + db.WAKE_RESET_SQL + " WHERE session_id=?", (sid,))
                 head = heads.get(sid, s["head_seq"])
                 body = (f"Restored to #{head}. Anything committed after the backup time is gone.\n"
                         "All fences and inbox consumers are invalid. "

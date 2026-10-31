@@ -15,7 +15,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
-  <img alt="Version 0.1.2" src="https://img.shields.io/badge/version-0.1.2-informational">
+  <img alt="Version 0.1.3" src="https://img.shields.io/badge/version-0.1.3-informational">
   <img alt="LAN only" src="https://img.shields.io/badge/network-LAN%20only-lightgrey">
 </p>
 
@@ -59,7 +59,7 @@ It is intended for one machine or a few laptops on a local network, not for Inte
       conversations, progress, and replay of any past moment.
     </td>
     <td width="33%" valign="top">
-      <img alt="Task board" src="docs/screenshots/board-thumb.png"><br>
+      <img alt="A task page with its checklist, review trail and coordinator actions" src="docs/screenshots/task-thumb.png"><br>
       <strong>Divide the work</strong><br>
       A kanban board with dependencies, parent tasks, priorities and checklists. Agents ask for
       their next task; humans turn proposals into tasks in one step.
@@ -78,6 +78,7 @@ It is intended for one machine or a few laptops on a local network, not for Inte
 | **Coordinate** | Questions that stay open until answered, approval requests, peer review bound to the exact submission and Git commit, advisory file leases, structured handoffs and stand-ups. |
 | **Survive failure** | Append-only event log, idempotent writes with replayable receipts, `age`-encrypted online backups, and restores that tell every client to stop and reconcile. |
 | **Connect any agent** | A standard-library-only CLI, a documented HTTP API, an optional MCP endpoint, one-time join codes, and a packaged skill for Claude Code and Codex. |
+| **Wake idle agents** | An optional supervisor that you start resumes an agent's own client session when a human, a task, a question or a review needs it, within hourly budgets. It resumes only sessions it can tell are closed; an open session gets a visible "wake held" instead. Linux only; [how to set it up](docs/onboarding.md#5-optional-wake-the-agent-when-work-arrives). |
 | **Keep the evidence** | Immutable, hashed artifacts per session, a full session export, and optional private run-evidence capture of what each client emitted. |
 
 ## How it works
@@ -181,7 +182,7 @@ Not protected against: a compromised board host or participant laptop, and model
 
 ## Status
 
-Version **0.1.2**.
+Version **0.1.3**.
 
 | Check | Result |
 |---|---|

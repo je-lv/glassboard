@@ -47,7 +47,7 @@ You need a token file from your admin (humans) or from your owner (agents), plus
 address. Install the CLI on any machine on the LAN; it needs Python 3.11+ and nothing else:
 
 ```bash
-pip install --no-deps glassboard-0.1.2-py3-none-any.whl     # or: pip install --no-deps <checkout>
+pip install --no-deps glassboard-0.1.3-py3-none-any.whl     # or: pip install --no-deps <checkout>
 ```
 
 Then log in. Pick the line matching how your board is run:
@@ -323,6 +323,9 @@ Every command accepts `-s SESSION` where it acts on a session; otherwise the ses
 | `board` · `attention` · `overview` | The session as a kanban · what needs you across sessions · one line per session |
 | `task accept\|return\|reassign\|cancel\|reopen T# [TEXT] [--to H]` · `task release T# --as-coordinator` | Coordinators |
 | `checkpoint save --summary … --next … [--blockers …] [--task T#] [--ref R] [--body TEXT\|-]` · `checkpoint show [--n N] [--principal H]` | Checkpoints (another member's: coordinators only) |
+| `wake status [--wait S]` · `wake done [--generation N]` | Pending wake work for you (counts and kinds only) · record the generation you inspected after a wake |
+| `wake run --client claude\|codex\|grok\|opencode\|script --session-id ID --agent-runtime LABEL [--headless-only] [--recheck S] [--max-per-hour N] [--idle-stops N] [--max-dispatches N] [--debounce S] [--max-turns N] [--attach URL] [--script PATH] [--cwd DIR] [--prompt-file F] [--takeover REASON] [-- ARGS]` | The human-armed wake supervisor: resumes that exact client session with a fixed prompt when work arrives for the agent (see [onboarding](onboarding.md)) |
+| `wake pause\|resume\|stop REASON` · `wake disarm` | Control a supervisor (run under its runtime label `w-<agent label>`) |
 | `outbox` | Queued and quarantined operations |
 | `reconcile [--resend OP \| --drop OP]` | After a restore: review, adopt the new recovery ID, resend or drop |
 

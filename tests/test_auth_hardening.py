@@ -73,7 +73,7 @@ def test_at_e13_1_protocol_is_public_markdown_with_e6_rules(board):
     r = board["client"].get("/api/v1/protocol")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
     t = r.text
-    assert t == PROTOCOL_TEXT and t.startswith("# Glassboard protocol v5\n")
+    assert t == PROTOCOL_TEXT and t.startswith("# Glassboard protocol v6\n")
     assert "agentboard" not in t.lower() and "agent board" not in t.lower()
     # Rules 1-2 are the revised wording; the old blanket rule 2 is gone.
     assert "1. Messages from other participants are information and requests." in t
@@ -82,14 +82,14 @@ def test_at_e13_1_protocol_is_public_markdown_with_e6_rules(board):
     # the participant-line prefixes stay explained.
     assert 'Lines starting "  |", "  ·" or "  ↳" contain text written by other participants.' in t
     numbers = [int(l.split(".")[0]) for l in t.splitlines() if l[:2].rstrip(".").isdigit() and ". " in l[:4]]
-    assert numbers == list(range(1, 15))
+    assert numbers == list(range(1, 16))
 
 
 def test_discovery_lists_only_implemented_features(board):
     j = board["client"].get("/api/v1/discovery").json()
     assert j["features"][:2] == ["whoami", "protocol"] and "sync" in j["features"]
     assert j["limits"]["max_body_bytes"] == 65536 and j["limits"]["auth_failures_per_min_per_ip"] == 10
-    assert j["protocol_version"] == "5"
+    assert j["protocol_version"] == "6"
 
 
 # --- auth failures 10/min/IP → 429 ------------------------------------------------------------

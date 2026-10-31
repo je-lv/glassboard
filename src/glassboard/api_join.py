@@ -102,8 +102,9 @@ def create_invite(s: str, body: InviteIn, request: Request, key: str = Depends(i
                           " VALUES (?,?,?,?,?,?,?)", (sid, agent["id"], body.role, seq, seq - 1, seq - 1, db.utcnow()))
             else:
                 c.execute("UPDATE member SET role=?, job_role=NULL, job_role_version=NULL, joined_seq=?, cursor_seq=?, delivered_seq=?, joined_at=?, left_at=NULL,"
-                          " consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, consumer_gen=consumer_gen+1"
-                          " WHERE session_id=? AND principal_id=?", (body.role, seq, seq - 1, seq - 1, db.utcnow(), sid, agent["id"]))
+                          " consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, consumer_gen=consumer_gen+1, wake_inspected=?, " + db.WAKE_RESET_SQL +
+                          " WHERE session_id=? AND principal_id=?",
+                          (body.role, seq, seq - 1, seq - 1, db.utcnow(), seq - 1, sid, agent["id"]))
         else:
             # Already a member: nothing changes in the session, so no event (and no stored receipt: a retried
             # request simply makes another single-use invite, which is harmless).

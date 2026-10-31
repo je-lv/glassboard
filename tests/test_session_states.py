@@ -27,7 +27,8 @@ def prepare(gb):
     api(gb, "POST", "/tasks/4/submit", "jose/claude", {"fence": f[4], "summary": "done"})
     q = api(gb, "POST", "/messages", "jose", {"kind": "question", "body": "q?", "to": ["jose/claude"]}).json()["seq"]
     consumer = api(gb, "POST", "/sync", "jose/claude").json()["consumer"]
-    return {"fence": f, "q": q, "consumer": consumer}
+    wake = api(gb, "POST", "/wake/arm", "jose/claude", {"adapter": "claude"}).json()["fence"]
+    return {"fence": f, "q": q, "consumer": consumer, "wake": wake, "generation": q}
 
 
 def set_state(gb, state, who="jose", reason="testing"):
@@ -61,6 +62,11 @@ def run(gb, ctx, op):
                                   {"if_version": gb.raw.execute("SELECT version FROM task WHERE num=4").fetchone()[0]}),
         "member.add": lambda: api(gb, "POST", "/members", "jose", {"handle": "ana/codex"}),
         "member.reduce": lambda: gb.req("DELETE", "/api/v1/sessions/s1/members/ana", "jose", rec=gb.rec()),
+        "wake.arm": lambda: api(gb, "POST", "/wake/arm", "jose/claude", {"adapter": "claude", "takeover": {"reason": "r"}}),
+        "wake.dispatch": lambda: api(gb, "POST", "/wake/dispatch", "jose/claude",
+                                     {"fence": ctx["wake"], "generation": ctx["generation"]}),
+        "wake.inspect": lambda: api(gb, "POST", "/wake/inspected", "jose/claude", {"generation": ctx["generation"]}),
+        "wake.control": lambda: api(gb, "POST", "/wake/stop", "jose/claude", {"fence": ctx["wake"], "reason": "r"}),
     }[op]()
 
 
@@ -73,7 +79,8 @@ def test_allowed_ops_matrix_per_session_state(gb, state):
     """Every row of sessions.ALLOWED in every state, each against a fresh session."""
     assert set(sessions.ALLOWED) == {"message", "resolve", "sync.attach", "sync.ack", "checkpoint", "task.create",
                                      "task.claim", "task.acknowledge", "task.progress", "task.reclaim", "task.finish", "task.coord",
-                                     "member.add", "member.reduce"}
+                                     "member.add", "member.reduce", "wake.arm", "wake.dispatch", "wake.inspect",
+                                     "wake.control"}
     refused = {"paused": "session_paused", "archived": "session_archived"}
     wrong = []
     for op in sessions.ALLOWED:

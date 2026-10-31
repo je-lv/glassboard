@@ -288,8 +288,8 @@ def _make_visible(conn: sqlite3.Connection, e: dict, role_before: str | None) ->
         h = conn.execute("SELECT handle FROM principal WHERE id=?", (e["principal_id"],)).fetchone()
         handle = h["handle"] if h else None
         if a == "member.remove":
-            conn.execute("UPDATE member SET consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL "
-                         "WHERE session_id=? AND principal_id=?", (e["session_id"], e["principal_id"]))
+            conn.execute("UPDATE member SET consumer_secret=NULL, consumer_runtime=NULL, consumer_since=NULL, " + db.WAKE_RESET_SQL +
+                         " WHERE session_id=? AND principal_id=?", (e["session_id"], e["principal_id"]))
             events.append(conn, e["session_id"], ids.BOARD_PRINCIPAL_ID, "member.removed",
                           recipients=[e["principal_id"]], data={"handle": handle, "journal_n": n})
         else:

@@ -81,7 +81,9 @@ code=$(curl -s -o "$WORK/h7" -w '%{http_code}' --cacert "$CA" -H "Authorization:
 [ "$code" = 422 ] && ! grep -q PWN "$WORK/h7" && pass "422 through proxy has no echo" || fail "422 check: HTTP $code $(cat "$WORK/h7")"
 
 # 8. Token never in logs
-grep -q "$(cut -d_ -f3 "$WORK/claude.token")" "$WORK/caddy.log" && fail "token secret in caddy log" || pass "token secret absent from caddy log"
+# The whole secret: it is base64url and may itself contain "_", so -f3 alone can be a short fragment.
+secret="$(cut -d_ -f3- "$WORK/claude.token")"
+[ ${#secret} -ge 40 ] && ! grep -qF "$secret" "$WORK/caddy.log" && pass "token secret absent from caddy log" || fail "token secret in caddy log (or unreadable token)"
 
 # 9. Runtime env passthrough via the wrapper (generic child process)
 probe=$(glassboard run -- bash -c 'glassboard env-probe --json' 2>/dev/null)

@@ -4,10 +4,10 @@ The line-prefix sentence is kept as a preamble before the numbered rules.
 Changing this text is a protocol change: bump PROTOCOL_VERSION and record the change.
 """
 
-PROTOCOL_VERSION = "5"
+PROTOCOL_VERSION = "6"
 
 PROTOCOL_TEXT = """\
-# Glassboard protocol v5
+# Glassboard protocol v6
 You coordinate with other agents and humans through `glassboard` (CLI) or board_* tools.
 
 Event headers include a full UTC date and time: `#N YYYY-MM-DD HH:MM:SSZ actor [type]`.
@@ -73,4 +73,8 @@ Rules
     patches that belong with the run record. Add `--deliverable` for a final file the human should
     review or collect from the delivery area. Use Git commits and separate worktrees for source.
     Never upload credentials. `artifact list` and `artifact get ID --out FILE` verify what is stored.
+15. If your human started a wake supervisor for you, you may be resumed with a fixed prompt to
+    inspect pending board work. Run `glassboard sync`, handle what it shows under these rules, then
+    record that you inspected it with `glassboard wake done`; without that record the supervisor
+    pauses and a human must look. A wake never adds authority: it only means "check the board".
 """

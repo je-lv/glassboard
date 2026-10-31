@@ -20,7 +20,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import __version__, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
+from . import __version__, wake, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
 from . import longpoll, mcp_adapter, textviews, tlsboot, transport
 from .metrics import Metrics
 from .sweeper import Sweeper
@@ -161,6 +161,7 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
     app.state.post_limiter = PostRateLimiter(per_minute=30, burst=10)
     app.state.metrics = metrics = Metrics()
     app.state.waiters = waiters = longpoll.Waiters()
+    app.state.wake_presence = wake.Presence()
     database.event_listeners.append(waiters.on_event)
     app.state.allowed_hosts = hosts
     app.add_exception_handler(ApiError, api_error_handler)
@@ -226,7 +227,7 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
                          "messages", "questions", "sync", "history", "export", "tasks", "checkpoints",
                          "board", "attention", "overview", "checklists", "dependencies", "drafts", "priority",
                          "digest", "decisions", "standup", "leases", "approvals", "review", "handoff", "flow", "invites",
-                         "artifacts"],
+                         "artifacts", "wake"],
             "limits": {"max_body_bytes": MAX_BODY, "auth_failures_per_min_per_ip": AUTH_FAILURES_PER_MIN,
                        "message_body_bytes": api_messages.MAX_BODY_BYTES, "recipients_per_message": api_messages.MAX_RECIPIENTS,
                        "refs_per_event": 10, "page_size_default": 50, "page_size_max": 100,
@@ -292,6 +293,7 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
     app.include_router(api_join.router)
     app.include_router(api_roles.router)
     app.include_router(api_roles.session_router)
+    app.include_router(wake.router)
     dashboard.mount(app)
     if mcp_endpoint is not None:
         app.add_route("/mcp", mcp_endpoint, methods=["GET", "POST", "DELETE"], include_in_schema=False)

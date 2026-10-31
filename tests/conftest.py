@@ -163,6 +163,14 @@ def api_routes(app_or_routes):
 # A valid body for every session route that takes one. Route walkers (non-member → 404, missing
 # recovery → 428, ...) fail when a body route has no entry, so new routes are never skipped silently.
 VALID_BODIES = {
+    ("POST", "/api/v1/sessions/{s}/wake/arm"): {"adapter": "claude"},
+    ("POST", "/api/v1/sessions/{s}/wake/inspected"): {"generation": 0},
+    ("POST", "/api/v1/sessions/{s}/wake/dispatch"): {"fence": "W1-aaaaaaaaaa", "generation": 1},
+    ("POST", "/api/v1/sessions/{s}/wake/pause"): {"fence": "W1-aaaaaaaaaa", "reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/wake/resume"): {"fence": "W1-aaaaaaaaaa", "reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/wake/stop"): {"fence": "W1-aaaaaaaaaa", "reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/wake/disarm"): {"fence": "W1-aaaaaaaaaa"},
+    ("POST", "/api/v1/sessions/{s}/wake/hold"): {"fence": "W1-aaaaaaaaaa", "reason": "r"},
     ("POST", "/api/v1/sessions/{s}/members"): {"handle": "ana"},
     ("POST", "/api/v1/sessions/{s}/job-roles"): {"handle": "jose", "role": "architect"},
     ("POST", "/api/v1/sessions/{s}/messages"): {"kind": "note", "body": "hello"},

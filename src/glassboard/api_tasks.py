@@ -896,6 +896,7 @@ def _fenced(op: str, s: str, t: str, body, key, recovery, runtime, p, database) 
                 data["handoff_fields"] = fields
         _, text = tx.event(EVENT[op], task_num=task["num"], body=text_body, data=data, claimant=task["claimant_id"],
                            waited=waited["ref"] if waited and waited["kind"] == "member" else None,
+                           reviewer=task["reviewer_id"],
                            receipt=lambda seq: _result(task["num"], new_status, gen, version, seq))
     return respond(text, 200)
 

@@ -24,25 +24,15 @@ ADMIN_COMMANDS = {"init", "add-human", "add-agent", "mint-token", "revoke-token"
                   "revoke-web-sessions", "set-admin-password", "backup", "restore", "setup-tls"}
 
 
-def port_free(port: int) -> bool:
-    s = socket.socket()
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)       # like uvicorn: TIME_WAIT is not "busy"
-    try:
-        s.bind(("127.0.0.1", port))
-        return True
-    except OSError:
-        return False
-    finally:
-        s.close()
-
-
 @pytest.mark.skipif(shutil.which("curl") is None, reason="the demo uses curl")
 def test_documented_coordination_demo_runs(tmp_path):
-    if not port_free(8000):
-        pytest.skip("port 8000 (used by the demo) is busy")
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
     assert "examples/coordination-demo.sh" in (ROOT / "README.md").read_text()
     env = {**os.environ, "PATH": f"{BIN}:{os.environ['PATH']}", "HOME": str(tmp_path),
-           "GLASSBOARD_DEMO_DIR": str(tmp_path / "demo")}
+           "GLASSBOARD_DEMO_DIR": str(tmp_path / "demo"), "GLASSBOARD_DEMO_PORT": str(port)}
     for k in ("GLASSBOARD_DB", "GLASSBOARD_MCP", "GLASSBOARD_INSECURE_HTTP", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
         env.pop(k, None)
     r = subprocess.run(["bash", str(ROOT / "examples" / "coordination-demo.sh")], cwd=ROOT, env=env,

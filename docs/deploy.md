@@ -376,6 +376,7 @@ The API is versioned (`/api/v1`). Update participants' CLIs with the same
 | `GLASSBOARD_AGE` | admin | `age` | Path to the age binary |
 | `GLASSBOARD_HOST`, `GLASSBOARD_TLS_PORT`, `GLASSBOARD_APP_PORT` | Caddyfile | `board.lan`, `8443`, `8080` | Caddy site |
 | `GLASSBOARD_TOKEN`, `GLASSBOARD_RUNTIME` | CLI | – | Token instead of the credentials file; runtime label (set by `glassboard run`) |
+| `GLASSBOARD_WAKE_GENERATION` | CLI | – | Set by `glassboard wake run` for the client it resumes; `glassboard wake done` records that generation |
 | `GLASSBOARD_PROFILE` | CLI | – | Act as this joined identity (set by `glassboard join … -- CLIENT`; same as `--as`) |
 | `GLASSBOARD_CLIENTS` | CLI | `claude,codex` | Extra process names counted as agent clients when `glassboard join` binds an identity |
 | `GLASSBOARD_BASE_CONFIG`, `GLASSBOARD_RUNTIME_STATE`, `GLASSBOARD_PROFILE_SOURCE` | CLI | – | Set by the CLI itself when a profile is active (where profiles live; why this one was chosen). Do not set them by hand |

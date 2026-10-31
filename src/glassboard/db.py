@@ -31,6 +31,13 @@ from typing import Iterator
 
 from . import ids
 
+# Appended to every UPDATE that resets a membership's inbox consumer (restore, removal, rejoin):
+# the wake supervisor's dispatch fence goes with it (ERRATA E30). Lives here so low-level modules
+# such as journal and backup can use it without importing the API layer.
+WAKE_RESET_SQL = ("wake_secret=NULL, wake_runtime=NULL, wake_since=NULL, wake_state=NULL, wake_adapter=NULL, "
+                  "wake_outstanding=NULL, wake_hold=NULL, wake_hold_seq=NULL, wake_dispatched_at=NULL, "
+                  "wake_gen=wake_gen+1")
+
 _MIGRATION_RE = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 # The first pre-release schema stored the string "b0a-1"; it corresponds to migration 001.
 _LEGACY_VERSIONS = {"b0a-1": 1}

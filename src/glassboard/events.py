@@ -26,6 +26,8 @@ TYPES = frozenset({
     "member.added", "member.removed", "member.changed", "member.jobrole",  # changed: permission role change
     "session.created", "session.paused", "session.resumed", "session.archived",
     "system.restored",
+    "wake.armed", "wake.takeover", "wake.dispatched", "wake.inspected", "wake.paused", "wake.resumed",
+    "wake.stopped", "wake.disarmed", "wake.held",
 })
 # Types appear inside header lines, whose grammar allows only [a-z.].
 assert all(re.fullmatch(r"[a-z.]+", t) for t in TYPES), "event types must match the header grammar"

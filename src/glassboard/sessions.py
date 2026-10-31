@@ -98,6 +98,10 @@ ALLOWED: dict[str, frozenset[str]] = {
     "task.coord": frozenset({"active", "paused"}),           # PATCH, accept, return, reassign, cancel, reopen
     "member.add": frozenset({"active", "paused"}),           # also raising a role
     "member.reduce": frozenset({"active", "paused", "archived"}),   # removals and role reductions
+    "wake.arm": frozenset({"active", "paused"}),
+    "wake.dispatch": frozenset({"active"}),                  # a paused or archived session wakes nobody
+    "wake.inspect": frozenset({"active", "paused"}),
+    "wake.control": frozenset({"active", "paused", "archived"}),  # pause, resume, stop, disarm
 }
 TRANSITIONS = {("active", "paused"): "session.paused", ("paused", "active"): "session.resumed",
                ("active", "archived"): "session.archived", ("paused", "archived"): "session.archived",

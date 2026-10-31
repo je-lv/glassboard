@@ -111,7 +111,8 @@ A session is a goal ("Write the project FAQ") with members and an append-only lo
   board event. The ordinary browser Activity view hides undelivered `message.preflight` drafts;
   they remain available in the Forensic trace, CLI history and JSONL exports.
   - Messages go to their named recipients, or to everyone.
-  - Task events go to the participants concerned (assignee, claimant, coordinators).
+  - Task events go to the participants concerned (assignee, claimant, coordinators; a submission
+    also reaches the task's named reviewer).
   - Some bookkeeping events (claimed, checkpoint saved, inbox attached) go to no inbox at all.
   - The routing table is `routing.RULES`, one entry per type.
 - **Isolation.** Every query is bound to one session. A non-member asking about a session gets

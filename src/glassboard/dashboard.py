@@ -39,7 +39,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
-from . import admin_auth, conversations, db, events, idempotency, ids, inbox, journal, observe, render, routing, run_browser, sessions, tlsboot, tokens
+from . import admin_auth, conversations, db, wake, events, idempotency, ids, inbox, journal, observe, render, routing, run_browser, sessions, tlsboot, tokens
 from .api_messages import MessageIn, send_message
 from .deps import client_addr, get_db
 from .errors import ApiError
@@ -934,9 +934,9 @@ def mount(app: FastAPI) -> None:
             else:
                 c.execute("UPDATE member SET role='coordinator', job_role=NULL, job_role_version=NULL, joined_seq=?, cursor_seq=?, delivered_seq=?, "
                           "joined_at=?, left_at=NULL, consumer_secret=NULL, consumer_runtime=NULL, "
-                          "consumer_since=NULL, consumer_gen=consumer_gen+1 "
-                          "WHERE session_id=? AND principal_id=?",
-                          (seq, seq - 1, seq - 1, now, sess["id"], viewer.p.id))
+                          "consumer_since=NULL, consumer_gen=consumer_gen+1, wake_inspected=?, " + db.WAKE_RESET_SQL +
+                          " WHERE session_id=? AND principal_id=?",
+                          (seq, seq - 1, seq - 1, now, seq - 1, sess["id"], viewer.p.id))
         return _security_headers(RedirectResponse(f"/s/{sess['handle']}", status_code=303))
 
     @app.post("/s/{s}/approvals/{seq}", include_in_schema=False)
@@ -1156,12 +1156,28 @@ def mount(app: FastAPI) -> None:
             sess, me = sessions.require_member(c, s, viewer.p)
             unread_rows, _ = inbox.inbox_page(c, sess, me, me["cursor_seq"], 1000)
             members = c.execute("SELECT m.role, m.job_role, m.job_role_version, m.last_seen_at, p.handle, p.kind, p.display_name, "
+                                "m.principal_id, m.joined_seq, m.wake_secret, m.wake_state, m.wake_adapter, m.wake_inspected, "
+                                "m.wake_runtime, m.wake_since, m.wake_gen, m.wake_outstanding, m.wake_dispatched_at, "
+                                "m.wake_hold, m.wake_hold_seq, "
                                 "EXISTS(SELECT 1 FROM invite i WHERE i.session_id=m.session_id AND i.agent_id=m.principal_id "
                                 "AND i.used_at IS NULL AND i.expires_at>=?) pending_invite FROM member m "
                                 "JOIN principal p ON p.id = m.principal_id WHERE m.session_id=? AND m.left_at IS NULL "
                                 "ORDER BY p.handle", (db.utcnow(), sess["id"])).fetchall()
             timeline = _timeline(c, sess, me, viewer, flt, task, before, order)
             board = _board(c, sess)
+            # Wake supervisor state per member (E30, E31). The hold reason is client text: quoted, inline.
+            presence = request.app.state.wake_presence
+            wake_info = {}
+            for m in members:
+                if m["wake_secret"] is None:
+                    continue
+                w = wake.status(c, sess, m, presence)
+                sup = w["supervisor"]
+                wake_info[m["handle"]] = {
+                    "state": sup["state"], "adapter": sup["adapter"], "pending": w["pending"],
+                    "running_since": sup["dispatched_at"][11:16] if sup["dispatched_at"] else None,
+                    "connected": sup["connected"],
+                    "hold": render.inline(sup["hold"]["reason"], 200) if sup["hold"] else None}
             status = _run_status(c, sess)
             if EXPERIMENTAL_UI:
                 strip_rows = c.execute("SELECT * FROM event WHERE session_id=? ORDER BY seq", (sess["id"],)).fetchall()
@@ -1193,6 +1209,7 @@ def mount(app: FastAPI) -> None:
                                     "job_role": m["job_role"], "job_role_version": m["job_role_version"],
                                     "last_seen_at": m["last_seen_at"],
                                     "pending_invite": bool(m["pending_invite"]),
+                                    "wake": wake_info.get(m["handle"]),
                                     "title": team_title(m["kind"], m["role"]),
                                     "display_name": render.r2(m["display_name"])} for m in members),
                                   key=lambda m: (TEAM_ORDER.index(m["title"]), m["handle"])),
