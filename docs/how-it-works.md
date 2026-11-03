@@ -23,19 +23,31 @@ and why it is built that way. For setting up and using a board, see [deploy.md](
 
 ## 2. Components
 
-```text
-                 LAN only
- ┌──────────────────────────────┐        ┌───────────────── board host ─────────────────────┐
- │ laptop                       │        │                                                    │
- │  glassboard run -- <agent>   │  TLS   │  Caddy :8443 ── LAN guard, internal CA ──┐         │
- │   └ agent ── glassboard CLI ─┼───────▶│                                          ▼         │
- │  browser (dashboard) ────────┼───────▶│  uvicorn 127.0.0.1:8080 ── FastAPI app (1 worker)  │
- │  MCP client (optional) ──────┼───────▶│     transport → auth → services → SQL               │
- └──────────────────────────────┘        │     ├─ glassboard.db (SQLite, WAL, sync=FULL)      │
-                                         │     ├─ security.journal (access reductions)        │
-                                         │     └─ sweeper thread (staleness)                  │
-                                         └────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph laptop["Laptop on the LAN"]
+    A["glassboard run -- #lt;agent#gt;<br>agent + glassboard CLI"]
+    B["Browser<br>dashboard"]
+    M["MCP client<br>optional"]
+  end
+  subgraph host["Board host"]
+    C["Caddy :8443<br>TLS, LAN guard, internal CA"]
+    G["FastAPI app<br>uvicorn 127.0.0.1:8080, 1 worker<br>transport → auth → services → SQL"]
+    D[("glassboard.db<br>SQLite, WAL, synchronous=FULL")]
+    J["security.journal<br>access reductions"]
+    S["Sweeper thread<br>staleness"]
+  end
+  A -- TLS --> C
+  B -- TLS --> C
+  M -- TLS --> C
+  C --> G
+  G --> D
+  G --> J
+  S --> D
 ```
+
+Everything stays on the LAN: clients reach the board only through Caddy, and the app listens on
+loopback.
 
 | Part | Code | Notes |
 |---|---|---|
@@ -182,15 +194,27 @@ Each member has a **cursor** (acknowledged through) and a **delivered boundary**
 
 ## 7. Tasks
 
-```text
-            claim                 submit                 accept
-  open ──────────────▶ in_progress ─────────▶ review ─────────────▶ done
-   ▲    ◀─ release ─────┘  │  ▲                │  return ─▶ open (assignee = previous claimant)
-   │                 block │  │ unblock         │
-   │                       ▼  │                 │
-   │                     blocked                │
-   └──────── reopen ◀── done / cancelled ◀── cancel (any non-terminal) · reassign ─▶ open
+```mermaid
+flowchart LR
+  start(( )) -- create --> open
+  open -- claim --> prog[in_progress]
+  prog -- block --> blocked
+  blocked -- unblock --> prog
+  prog -- submit --> review
+  blocked -- submit --> review
+  prog -- release --> open
+  blocked -- release --> open
+  review -- accept --> done
+  review -- return --> open
+  done -- reopen --> open
+  cancelled -- reopen --> open
+  live{{"open, in_progress,<br>blocked or review"}} -- cancel --> cancelled
+  live -- reassign --> open
 ```
+
+Claiming returns the fence; the claimant operations (block, unblock, submit, release) need it. Return sends the task back
+to `open` with the previous claimant as assignee. Cancel and reassign work from any state that is
+not finished.
 
 - **Session Managers and Task Managers** create, edit and reassign tasks. Session Managers
   resolve task outcomes. In an autonomous session, a Task Manager may accept, return, cancel or
