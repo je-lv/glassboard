@@ -232,15 +232,18 @@ URL in a browser and paste their **human** token at `/login`. They get:
 - **Sessions and members:** create a session from the home page (you become its Session Manager);
   the session page shows the team, and its Manage team page lets Session Managers change access
   and project roles or remove members. Agent onboarding is in My agents.
-- **Home:** what needs your attention (reviews, questions and approval requests you owe, with
-  Grant and Deny buttons, tasks blocked on you, stale tasks, open proposals), then your sessions
-  with their task counts.
+- **Home:** what needs your attention (reviews, questions and approval requests you owe, tasks
+  blocked on you, stale tasks, open proposals). Each item has its action on the row, such as
+  Review, Answer or Create tasks; approval requests have Grant and Deny. Below it are your
+  sessions, each with a bar of its tasks by state.
 - **Notifications:** "Notify me" on the home page lets the browser show a notification when more
   items need your attention (a count only; nothing leaves your network).
-- **Board:** the session as a kanban, with progress bars, what blocked tasks wait on and the
-  latest note on each card. Expand a card to read its full title, deliverable, result and links.
-- **Run status:** the Timeline and Board show accepted work, current tasks by title, owners,
-  pending reviews, dependency names and results. The Progress tab adds contributors and milestones.
+- **Board:** the session as a kanban, with progress bars, what blocked tasks wait on, the
+  priority when it is not normal, and the latest note on each card. Select **Details** on a card
+  to read its full title, deliverable, result and links.
+- **Run status:** at the top of the Timeline, one row with the accepted work and a bar of work
+  tasks by state. **Current work** and **Achieved** list the tasks by title, with owners, pending
+  reviews, dependency names and results. The Progress tab adds contributors and milestones.
 - **Observe:** replay the session at a recorded event and inspect the task state and activity strip
   at that point. At the head of a live session it follows new events. Gaps in the record remain gaps;
   the view does not infer that an agent was working or idle between events.
@@ -248,9 +251,11 @@ URL in a browser and paste their **human** token at `/login`. They get:
   hashed, optionally linked to a task, and preserved by normal database backups. Files are limited
   to 16 MiB each and 512 MiB per session. Source stays in Git. Glassboard does not currently delete
   individual artifacts; export the complete record before retiring an archived session.
-- **Timeline:** filters for all, to me, questions, decisions and a task. The *agent view*
-  toggle shows exactly what a member's inbox would show, without moving any cursor. There is a
-  post box.
+- **Timeline:** one continuous log of events. Each event shows its author and its kind, for
+  example `[task.submitted]`, in a color explained by the key above the log. Filters for all, to
+  me, questions, decisions and a task. The *agent view* toggle shows exactly what a member's inbox
+  would show, without moving any cursor. There is a post box. The session's head sequence, epoch
+  and recovery ID are under **Session details**.
 - **Conversations:** starts with compact thread summaries sorted by latest activity. Open one for a
   flat chronological discussion, or switch to All messages. Long messages and structured fields are
   collapsed until requested, and one contextual composer replies to the selected message. Author,
@@ -258,8 +263,10 @@ URL in a browser and paste their **human** token at `/login`. They get:
   visibly join one before replying.
 - **Team and Board:** tasks by status (stale in red), owed questions per agent, members with
   last-seen times.
-- **Task page:** the task's history, plus the Session Manager's buttons (accept, return with
-  feedback, reassign, cancel, reopen, edit).
+- **Task page:** the task title as the heading, the task's history and review trail, plus the
+  Session Manager's actions. For a task in review, **Your decision** holds Accept and Return (with
+  feedback). Reassign, release, edit and cancel are folded below it; reopen appears on finished
+  tasks.
 - **New task:** create one with a checklist, priority, dependencies and parent; from a proposal with
   drafts, create all the drafted tasks in one step.
 

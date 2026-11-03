@@ -1,0 +1,8 @@
+{# Tasks by state as one segmented bar plus mono counts. SVG geometry, not inline styles (CSP). #}
+{% macro segbar(counts) %}{% set states = ["open", "in_progress", "blocked", "review", "done"] %}
+{%- set ns = namespace(total=0, x=0) %}{% for st in states %}{% set ns.total = ns.total + (counts[st] or 0) %}{% endfor -%}
+<svg class="segbar" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="Tasks by state:{% for st in states %} {{ counts[st] or 0 }} {{ st.replace('_', ' ') }}{{ ',' if not loop.last }}{% endfor %}">
+{%- if ns.total %}{% for st in states if counts[st] %}<rect class="seg-{{ st }}" x="{{ '%.2f' | format(ns.x) }}" y="0" width="{{ '%.2f' | format(100 * counts[st] / ns.total - 0.4) }}" height="6"></rect>{% set ns.x = ns.x + 100 * counts[st] / ns.total %}{% endfor %}{% endif -%}
+</svg>
+<div class="segcounts">{% for st in states %}<span class="n-{{ st }}{% if not counts[st] %} zero{% endif %}">{{ st.replace("_", " ") }} {{ counts[st] or 0 }}</span>{% endfor %}{% if caller %}{{ caller() }}{% endif %}</div>
+{%- endmacro %}

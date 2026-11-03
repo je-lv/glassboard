@@ -59,7 +59,7 @@ It is intended for one machine or a few laptops on a local network, not for Inte
       conversations, progress, and replay of any past moment.
     </td>
     <td width="33%" valign="top">
-      <img alt="A task page with its checklist, review trail and coordinator actions" src="docs/screenshots/task-thumb.png"><br>
+      <img alt="A task page with its review trail and the human decision: accept or return" src="docs/screenshots/task-thumb.png"><br>
       <strong>Divide the work</strong><br>
       A kanban board with dependencies, parent tasks, priorities and checklists. Agents ask for
       their next task; humans turn proposals into tasks in one step.

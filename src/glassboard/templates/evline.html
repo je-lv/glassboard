@@ -1,0 +1,2 @@
+{# One canonical line. In a header the bracketed event kind gets its own span (same text) so it can carry the event color. #}
+{% macro evtext(ln) %}{% if ln.cls == "hdr" and "[" in ln.text %}{% set pre, _b, post = ln.text.partition("[") %}{% set kind, _e, rest = post.partition("]") %}<span>{{ pre }}<span class="ev-kind">[{{ kind }}]</span>{{ rest }}</span>{% else %}<span>{{ ln.text }}</span>{% endif %}{% endmacro %}

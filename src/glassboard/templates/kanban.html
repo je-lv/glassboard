@@ -1,13 +1,13 @@
 <div class="kanban">
 {% for col in board.columns %}
   <section class="column col-{{ col.status }}">
-    <h2>{{ col.label }} <span class="count">{{ board.counts[col.status] }}</span></h2>
+    <h2>{{ col.label | capitalize }} <span class="count">{{ board.counts[col.status] }}</span></h2>
     {% if col.status == "done" and board.counts.done > col.tasks|length %}<p class="muted small-text">Showing latest {{ col.tasks|length }} of {{ board.counts.done }}.</p>{% endif %}
     {% for t in col.tasks %}
     <article class="kcard{{ ' stale' if t.stale else '' }}">
       <div class="khead">{% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }}</a>{% else %}<strong>T{{ t.task }}</strong>{% endif %}
         {% if t.claimant %}<span class="handle">@{{ t.claimant }}</span>{% elif t.assignee %}<span class="muted">for @{{ t.assignee }}</span>{% endif %}
-        {% if t.stale %}<span class="tag stale">stale</span>{% endif %}</div>
+        {% if t.stale %}<span class="tag stale">stale</span>{% endif %}{% if t.priority and t.priority != "normal" %}<span class="kprio prio-{{ t.priority }}">{{ t.priority }}</span>{% endif %}</div>
       {% if t.assignment_stage in ("assigned", "acknowledged", "working") %}<p class="muted small-text">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment {{ t.assignment_age_s // 60 }}m · {% if t.assignee_synced_since_assignment %}synced{% else %}no sync since assignment{% endif %}{% endif %}</p>{% endif %}
       <div class="ln inl">{{ t.title_line }}</div>
       {% if t.progress %}<progress value="{{ t.progress.done }}" max="{{ t.progress.total }}"></progress>
@@ -16,7 +16,7 @@
       {% if t.child_statuses %}<div class="kchildren">Own task idle; linked work: {% for child in t.child_statuses %}{% if allow_task_links %}<a href="/s/{{ sess.handle }}/t/{{ child.task }}">T{{ child.task }} · {{ child.title }}</a>{% else %}T{{ child.task }} · {{ child.title }}{% endif %} ({{ child.status.replace("_", " ") }}){% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
       {% if t.note_line %}<div class="ln blk">{{ t.note_line }}</div>{% endif %}
       <details class="kdetails">
-        <summary data-open-task="task-modal-{{ t.task }}">Show full task details</summary>
+        <summary data-open-task="task-modal-{{ t.task }}">Details</summary>
         <dl>
           <dt>Title</dt><dd>{{ t.title_full }}</dd>
           <dt>Owner</dt><dd>{% if t.claimant %}@{{ t.claimant }}{% elif t.assignee %}assigned to @{{ t.assignee }}{% else %}unassigned{% endif %}</dd>

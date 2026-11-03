@@ -1,5 +1,6 @@
 """Dashboard v0 (XSS corpus inert; missing CSRF → 403; CSP header present) and
 GET /metrics admin-only."""
+import html as html_mod
 import re
 from datetime import datetime
 
@@ -479,6 +480,11 @@ def test_activity_identifies_actor_and_explains_event_colors(d):
     for label in ("Session", "Team / new task", "Task activity", "Submit / review / return",
                   "Accepted", "Blocked / cancelled", "System", "Message / other"):
         assert label in html
+    # The event kind is wrapped for its color; the header's text is still exactly the canonical line.
+    assert '<span class="ev-kind">[note]</span>' in html
+    header = re.search(r'<div class="ln hdr">(.*?)</div>', html.split('data-event="note"', 1)[1]).group(1)
+    text = html_mod.unescape(re.sub(r"<[^>]+>", "", header.split("</span></span>", 1)[1]))   # drop the actor badge
+    assert re.fullmatch(r"#\d+ \S+ \S+Z jose/claude(@\S+)? -> all \[note\]", text), text
 
 
 # --- /metrics -----------------------------------------------------------------------------------------

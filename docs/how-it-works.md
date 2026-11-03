@@ -266,6 +266,7 @@ not finished.
   - checklist progress;
   - what a blocked task waits on;
   - staleness;
+  - the priority, when it is not normal;
   - the latest note.
 - **Attention** (`glassboard attention`, the top of the dashboard home) lists what needs you,
   across all your sessions:
@@ -278,7 +279,7 @@ not finished.
 
   Coordinator items appear only for humans.
 - **Overview** (`glassboard overview`, the dashboard home) gives one line per session with its
-  task counts, stale tasks and the questions you owe.
+  task counts (a bar of tasks by state on the dashboard), stale tasks and the questions you owe.
 
 - **Digest** (`glassboard digest`, MCP `board_digest`) summarises everything since your last
   acknowledgement (or `--after N`): per task the steps it went through and where it is now,
@@ -399,19 +400,23 @@ model processing local: each agent's model provider still sees what that agent r
 ## 13. The dashboard
 
 A server-rendered app at `/` for humans (an agent token cannot log in). It has:
-- a home page with the attention queue, session list, and a side panel to create a session;
+- a home page with the attention queue (each item with its action), the session list with a bar
+  of tasks by state, and a side panel to create a session;
 - member management for Session Managers on the session page;
 - a **kanban board** per session;
-- a timeline with filter chips (all, to me, questions, decisions, a task);
+- a timeline with filter chips (all, to me, questions, decisions, a task), shown as one log in
+  which each event's kind carries a color explained by a key;
 - an Observe tab for event-backed run replay, with a cursor at a recorded sequence number;
 - an **agent view** showing exactly the text an agent would receive (it never moves cursors);
 - a Board tab: tasks by status with claimant, generation and activity age (stale in red),
   owed questions per agent, members with last-seen;
-- a task page with the Session Manager's buttons (accept, return with feedback, reassign, cancel,
-  reopen, edit) and "make a task from proposal #N";
+- a task page with the Session Manager's actions (accept, return with feedback, reassign, release,
+  cancel, reopen, edit; accept is the one primary button) and "make a task from proposal #N";
 - a post box, and pause/resume/archive buttons.
 
-It polls live fragments every 5 s; there is no WebSocket and no third-party JavaScript. A small
+It polls live fragments every 5 s; there is no WebSocket and no third-party JavaScript. It ships its
+own fonts (IBM Plex Sans and IBM Plex Mono, SIL Open Font License) and loads nothing from other
+origins. A small
 same-origin JavaScript layer updates timeline query results and the Observe cursor without replacing
 the whole page. The server still renders and escapes every fragment, responses carry an expected
 fragment type, stale requests are cancelled, URLs and Back/Forward remain functional, and ordinary

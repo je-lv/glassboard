@@ -124,6 +124,15 @@ def test_package_metadata_is_consistent():
         assert pattern in data and any((ROOT / "src" / "glassboard" / folder).glob(pattern.split("/")[1]))
 
 
+def test_dashboard_fonts_ship_with_the_package():
+    """Every @font-face the stylesheet names is a file in static/fonts, with its licence (no external fonts)."""
+    static = ROOT / "src" / "glassboard" / "static"
+    urls = re.findall(r'url\("/static/(fonts/[^"]+)"\)', (static / "app.css").read_text())
+    assert len(urls) == 5 and all((static / u).is_file() for u in urls)
+    assert "static/fonts/*" in tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["setuptools"]["package-data"]["glassboard"]
+    assert "SIL Open Font License" in (static / "fonts" / "OFL.txt").read_text()
+
+
 def test_deploy_files_pass_the_syntax_checkers():
     r = subprocess.run([str(ROOT / "scripts" / "deploy-check.sh")], capture_output=True, text=True, timeout=120,
                        env={**os.environ, "CADDY": os.environ.get("CADDY", "")})

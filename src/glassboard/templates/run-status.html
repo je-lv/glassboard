@@ -1,9 +1,11 @@
 <section class="run-status card" aria-labelledby="run-status-title">
+  {% from "segbar.html" import segbar %}
   <div class="run-status-top">
-    <div><h2 id="run-status-title">Run status</h2><p><strong>{{ run_status.accepted }} of {{ run_status.total }}</strong> work tasks accepted <span class="muted">({{ run_status.percent }}%)</span></p></div>
+    <h2 id="run-status-title">Run status</h2>
+    <p><strong>{{ run_status.accepted }} of {{ run_status.total }}</strong> work tasks accepted <span class="muted">({{ run_status.percent }}%)</span></p>
+    {% if run_status.total %}<div class="run-status-bar">{{ segbar(run_status.counts) }}</div>{% endif %}
     <a href="/s/{{ sess.handle }}/progress">Open full progress</a>
   </div>
-  {% if run_status.total %}<progress value="{{ run_status.accepted }}" max="{{ run_status.total }}" aria-label="accepted work tasks"></progress>{% endif %}
   {% for parent in run_status.stale_parents %}
   <div class="run-status-note"><strong>Coordination needs an update:</strong> <a href="/s/{{ sess.handle }}/t/{{ parent.task }}">T{{ parent.task }} · {{ parent.title }}</a> has no recent activity. Linked work:
     {% for child in parent.children %}<a href="/s/{{ sess.handle }}/t/{{ child.task }}">T{{ child.task }} · {{ child.title }}</a> ({{ child.status.replace("_", " ") }}){% if not loop.last %}, {% endif %}{% endfor %}.

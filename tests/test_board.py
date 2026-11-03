@@ -281,7 +281,8 @@ def test_dashboard_board_page_and_attention_home(b):
     assert 'style="' not in html                                         # the CSP forbids inline styles
     home = c.get("/").text
     assert "Needs your attention" in home and f"s1 T{n}" in home and "waiting on you" in home
-    assert ">open 0</span> <span class=\"tag st st-in_progress\">in progress 0</span> <span class=\"tag st st-blocked\">blocked 1</span>" in home
+    assert '<span class="n-open zero">open 0</span><span class="n-in_progress zero">in progress 0</span><span class="n-blocked">blocked 1</span>' in home
+    assert 'aria-label="Tasks by state: 0 open, 0 in progress, 1 blocked, 0 review, 0 done"' in home
     assert c.get("/s/nope/board").status_code == 404
 
 
@@ -385,7 +386,7 @@ def test_kanban_card_can_expand_full_task_text(b):
         "title": title, "scope": "create.py", "deliverable": deliverable,
         "assignee": "jose/claude", "reviewer": "ana/codex"}).json()["task"]
     html = login(b, "ana").get("/s/s1/board").text
-    assert "<details class=\"kdetails\">" in html and "Show full task details" in html
+    assert "<details class=\"kdetails\">" in html and ">Details</summary>" in html
     assert title in html and deliverable in html
     assert "Reviewer</dt><dd>@ana/codex" in html
     assert f"/s/s1/t/{n}" in html

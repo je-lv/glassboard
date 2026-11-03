@@ -2,10 +2,9 @@
 {% import "errors.html" as errs %}
 {% block title %}T{{ t.task }} · {{ sess.handle }} · Glassboard{% endblock %}
 {% block main %}
-<a class="crumb" href="/s/{{ sess.handle }}">← {{ sess.handle }}</a>
-<section class="head"><h1>T{{ t.task }} <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span> <span class="tag">g{{ t.gen }}</span> <span class="tag">v{{ t.version }}</span>
-  <span class="tag prio-{{ t.priority }}">{{ t.priority }}</span>{% if t.stale %} <span class="tag stale">stale</span>{% endif %}</h1>
-<p class="meta">{% if t.claimant %}claimant @{{ t.claimant }}{% if t.claimant_runtime %} ({{ t.claimant_runtime }}){% endif %} · {% endif %}{% if t.assignee %}assignee @{{ t.assignee }} · {% endif %}created by @{{ t.created_by }}{% if t.activity_age_s is not none %} · activity {{ t.activity_age_s // 60 }}m ago{% endif %} · stale after {{ t.effective_stale_after_s // 60 }}m</p></section>
+<p class="crumb"><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> / <a href="/s/{{ sess.handle }}/board">board</a> / T{{ t.task }}</p>
+<section class="head"><h1><span class="task-num">T{{ t.task }}</span> <span class="task-title">{{ title_line }}</span> <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span>{% if t.stale %} <span class="tag stale">stale</span>{% endif %}</h1>
+<p class="meta"><span class="facts">g{{ t.gen }} · v{{ t.version }} · <span class="prio-{{ t.priority }}">{{ t.priority }}</span></span> {% if t.claimant %}claimant @{{ t.claimant }}{% if t.claimant_runtime %} ({{ t.claimant_runtime }}){% endif %} · {% endif %}{% if t.assignee %}assignee @{{ t.assignee }} · {% endif %}created by @{{ t.created_by }}{% if t.activity_age_s is not none %} · activity {{ t.activity_age_s // 60 }}m ago{% endif %} · stale after {{ t.effective_stale_after_s // 60 }}m</p></section>
 <p class="note">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment for {{ t.assignment_age_s // 60 }} minutes{% endif %}</p>
 {% if t.ack_overdue %}<p class="note">{% if t.assignee_synced_since_assignment %}Assignee has synced with this board since assignment, but has not acknowledged T{{ t.task }}.{% else %}No board sync recorded for the assignee since assignment.{% endif %}{% if can_coordinate %} Check with the assignee or reassign the task if needed.{% endif %}</p>{% endif %}
 {% if t.summary_needs_detail %}<p class="alert">The submitted summary does not explain the result. Read the history and ask for a fuller handoff before acceptance.</p>{% endif %}
@@ -34,7 +33,7 @@
         </li>{% endfor %}</ol>
     </details>
     <h2>History</h2>
-    {% for ev in history %}<div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}</div>{% endfor %}
+    {% from "evline.html" import evtext %}{% for ev in history %}<div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{{ evtext(ln) }}</div>{% endfor %}</div>{% endfor %}
   </section>
   <aside>
   {% if can_review and t.submission %}
@@ -56,34 +55,38 @@
     </form>
   {% endif %}
   {% if can_coordinate %}
-    {% macro form(action, label, fields="", danger=False) %}
-    <form method="post" action="/s/{{ sess.handle }}/t/{{ t.task }}/{{ action }}" class="card">
+    {% macro form(action, label, fields="", danger=False, primary=False, cls="card") %}
+    <form method="post" action="/s/{{ sess.handle }}/t/{{ t.task }}/{{ action }}" class="{{ cls }}">
       <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
       <input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
       <input type="hidden" name="op" value="{{ op }}-{{ action }}">
       <input type="hidden" name="if_version" value="{{ t.version }}">
       {{ caller() if caller else "" }}
-      <button type="submit"{% if danger %} class="danger"{% endif %}>{{ label }}</button>
+      <button type="submit"{% if danger %} class="danger"{% elif not primary %} class="secondary"{% endif %}>{{ label }}</button>
     </form>
     {% endmacro %}
     {% if t.status == "review" %}
-      {% call form("accept", "Accept") %}<label for="ra">Note (optional)</label><input id="ra" name="reason">{% endcall %}
-      {% call form("return", "Return") %}<input type="hidden" name="submission_seq" value="{{ t.submission.seq }}"><label for="fb">Feedback (required)</label><textarea id="fb" name="feedback" rows="3" required></textarea>{% endcall %}
-    {% endif %}
-    {% if t.status in ("open", "in_progress", "blocked", "review") %}
-      {% call form("reassign", "Reassign") %}<label for="to">To</label>
-        <select id="to" name="to">{% for m in members %}<option>{{ m }}</option>{% endfor %}</select>
-        <label for="rr">Reason</label><input id="rr" name="reason">{% endcall %}
-      {% call form("cancel", "Cancel task", danger=True) %}<label for="rc">Reason</label><input id="rc" name="reason">{% endcall %}
-    {% endif %}
-    {% if t.status in ("in_progress", "blocked") %}
-      {% call form("release", "Release (as Session Manager)") %}<label for="ho">Handoff</label><input id="ho" name="handoff">{% endcall %}
+    <section class="card decision"><h2>Your decision</h2>
+      <p class="muted small-text">Only a human can accept or return this submission.</p>
+      {% call form("accept", "Accept", primary=True, cls="") %}<label for="ra">Note (optional)</label><input id="ra" name="reason">{% endcall %}
+      {% call form("return", "Return", cls="") %}<input type="hidden" name="submission_seq" value="{{ t.submission.seq }}"><label for="fb">Feedback (required)</label><textarea id="fb" name="feedback" rows="3" required></textarea>{% endcall %}
+    </section>
     {% endif %}
     {% if t.status in ("done", "cancelled") %}
-      {% call form("reopen", "Reopen") %}<label for="ro">Reason</label><input id="ro" name="reason">{% endcall %}
+      {% call form("reopen", "Reopen", primary=True) %}<label for="ro">Reason</label><input id="ro" name="reason">{% endcall %}
     {% endif %}
     {% if t.status in ("open", "in_progress", "blocked", "review") %}
-      {% call form("edit", "Save edits") %}
+    <section class="card task-actions">
+      <details><summary>Reassign</summary>
+      {% call form("reassign", "Reassign", cls="") %}<label for="to">To</label>
+        <select id="to" name="to">{% for m in members %}<option>{{ m }}</option>{% endfor %}</select>
+        <label for="rr">Reason</label><input id="rr" name="reason">{% endcall %}</details>
+      {% if t.status in ("in_progress", "blocked") %}
+      <details><summary>Release</summary>
+      {% call form("release", "Release (as Session Manager)", cls="") %}<label for="ho">Handoff</label><input id="ho" name="handoff">{% endcall %}</details>
+      {% endif %}
+      <details><summary>Edit task</summary>
+      {% call form("edit", "Save edits", cls="") %}
         <input type="hidden" name="if_version" value="{{ t.version }}">
         {% for f, label, tag in (("title", "Title", "input"), ("deliverable", "Deliverable", "input"), ("scope", "Scope", "textarea")) %}
           <label for="e{{ f }}">{{ label }}</label>
@@ -101,7 +104,10 @@
         <label for="edp">Depends on (e.g. T3, T4)</label><input id="edp" name="depends_on" value="{{ edit.depends_on }}">
         <label for="epa">Parent task (e.g. T1)</label><input id="epa" name="parent" value="{{ edit.parent }}">
         <label for="ea">Stale after (seconds, 300-14400)</label><input id="ea" name="stale_after_s" inputmode="numeric" value="{{ t.stale_after_s or '' }}">
-      {% endcall %}
+      {% endcall %}</details>
+      <details class="danger-action"><summary>Cancel task</summary>
+      {% call form("cancel", "Cancel task", danger=True, cls="") %}<label for="rc">Reason</label><input id="rc" name="reason">{% endcall %}</details>
+    </section>
     {% endif %}
   {% else %}
     <p class="muted">Only human Session Managers manage tasks here. Agents claim and report with the CLI.</p>

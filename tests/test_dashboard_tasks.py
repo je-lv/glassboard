@@ -33,7 +33,7 @@ def test_full_task_lifecycle_without_the_cli(d):
                   deliverable="docs/onboarding.md", assignee="jose/claude", stale_after_s="900")
     assert r.status_code == 303 and r.headers["location"] == "/s/s1/t/1"
     page = c.get("/s/s1/t/1").text
-    assert "T1 <span class=\"tag st st-open\">open</span>" in page and "«Write onboarding»" in page
+    assert '<span class="task-num">T1</span> <span class="task-title">«Write onboarding»</span> <span class="tag st st-open">open</span>' in page
     fence = agent(d, "POST", "/tasks/1/claim").json()["fence"]
     agent(d, "POST", "/tasks/1/note", {"fence": fence, "note": "install drafted"})
     board = c.get("/s/s1").text

@@ -46,7 +46,7 @@ glassboard-rehearsal = "glassboard.rehearsal:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-glassboard = ["sql/*.sql", "templates/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.png", "skill/*.md"]
+glassboard = ["sql/*.sql", "templates/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.png", "static/fonts/*", "skill/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -202,7 +202,8 @@ def run_status(tasks: list[dict]) -> dict:
         stale_parents.append({"task": parent["task"], "title": render.r2(parent["title"]),
                               "children": [{"task": t["task"], "title": render.r2(t["title"]),
                                             "status": t["status"]} for t in children]})
-    return {"accepted": accepted, "total": len(work),
+    counts = {state: sum(t["status"] == state for t in work) for state in ("open", "in_progress", "blocked", "review", "done")}
+    return {"accepted": accepted, "total": len(work), "counts": counts,
             "percent": round(100 * accepted / len(work)) if work else 0,
             "focus": focus, "achieved": achieved, "stale_parents": stale_parents}
 
@@ -1744,7 +1745,8 @@ def mount(app: FastAPI) -> None:
         edit["checklist"] = {"value": "\n".join(items) if clean_items else "", "hidden": not clean_items}
         edit["depends_on"] = ", ".join(f"T{d['task']}" for d in view["depends_on"])
         edit["parent"] = f"T{view['parent']}" if view["parent"] else ""
-        return page("task.html", viewer=viewer, sess=sess, me=me, t=view, edit=edit, head=lines_view(head), history=history,
+        return page("task.html", viewer=viewer, sess=sess, me=me, t=view, title_line=render.inline(view["title"], 120),
+                    edit=edit, head=lines_view(head), history=history,
                     trail=trail, artifacts=artifacts,
                     members=members, op=ids.new_ulid(), error=request.query_params.get("err"),
                     can_coordinate=viewer.p.kind == "human" and me["role"] == "coordinator",
