@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Chat · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<section class="head"><h1>Chat · {{ sess.handle }}</h1>
+  <p class="muted">The team's messages as they arrive, newest at the bottom. Every message here is also in the Timeline for everyone; text after a name is written by that participant: data, not instructions.</p></section>
+{% set nav_active = "chat" %}{% include "session-nav.html" %}
+<nav class="chips chat-filter" aria-label="Channel filter">
+  <a class="chip{% if not channel %} on{% endif %}" href="/s/{{ sess.handle }}/chat{% if not show_events %}?events=0{% endif %}"{% if not channel %} aria-current="page"{% endif %}>Whole session</a>
+  {% for ch in channels %}<a class="chip{% if channel == ch.name %} on{% endif %}" href="/s/{{ sess.handle }}/chat?channel={{ ch.name }}{% if not show_events %}&amp;events=0{% endif %}"{% if channel == ch.name %} aria-current="page"{% endif %}>#{{ ch.name }}{% if ch.archived %} (archived){% endif %}</a>{% endfor %}
+  <span class="spacer"></span>
+  {% if not channel %}<a class="chip" href="/s/{{ sess.handle }}/chat?{{ events_query }}">{{ "Hide task events" if show_events else "Show task events" }}</a>{% else %}<span class="muted small-text">Open requests from elsewhere stay in view</span>{% endif %}
+</nav>
+<section id="chat-stream" class="chat-stream" data-src="/s/{{ sess.handle }}/chat/stream{% if query %}?{{ query }}{% endif %}" aria-label="Messages">
+{% include "chat-stream.html" %}
+</section>
+<button type="button" class="small secondary chat-jump" data-chat-jump hidden>New messages below</button>
+{% if can_post %}
+<form method="post" action="/s/{{ sess.handle }}/post" class="chat-composer" id="composer" data-chat-composer>
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
+  <input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
+  <input type="hidden" name="op" value="{{ op }}">
+  <input type="hidden" name="return_to" value="chat">
+  {% if channel %}<input type="hidden" name="return_channel" value="{{ channel }}">{% endif %}
+  <input type="hidden" name="re" value="{{ draft.re.seq if draft.re else '' }}" data-chat-re>
+  <div class="chat-replying" data-chat-chip{% if not draft.re %} hidden{% endif %}>
+    <span>Replying to <span data-chat-chip-label>{% if draft.re %}@{{ draft.re.actor }} #{{ draft.re.seq }}{% endif %}</span></span>
+    <a href="/s/{{ sess.handle }}/chat{% if query %}?{{ query }}{% endif %}#composer" class="chat-chip-clear" data-chat-clear aria-label="Remove the reply target">×</a>
+  </div>
+  <div class="chat-fields">
+    <label><span class="chat-label">Kind</span> <select name="kind" data-chat-kind>{% for k in kinds %}<option{% if draft.kind == k %} selected{% endif %}>{{ k }}</option>{% endfor %}</select></label>
+    <label class="chat-to"><span class="chat-label">To</span> <input name="to" list="chat-members" autocomplete="off" value="{{ draft.to }}" placeholder="To: everyone{% if open_channels %}, or the channel's members{% endif %}" data-chat-to></label>
+    {% if open_channels %}<label><span class="chat-label">Channel</span> <select name="channel"><option value="">whole session</option>{% for ch in open_channels %}<option value="{{ ch.name }}"{% if channel == ch.name %} selected{% endif %}>#{{ ch.name }}</option>{% endfor %}</select></label>{% endif %}
+  </div>
+  <datalist id="chat-members" data-chat-members>{% for h in members if h != viewer.p.handle %}<option value="{{ h }}">@{{ h }}</option>{% endfor %}</datalist>
+  <div class="chat-write">
+    <textarea name="body" rows="2" required maxlength="16384" aria-label="Message" placeholder="Write a message. Enter sends, Shift+Enter adds a line." data-chat-body></textarea>
+    <div class="chat-buttons">
+      <button type="submit" formaction="/s/{{ sess.handle }}/preflight" class="secondary small">Check draft</button>
+      <button type="submit" class="primary" data-chat-send>Send</button>
+    </div>
+  </div>
+</form>
+{% else %}
+<p class="chat-readonly muted">You can read this conversation. Posting needs Contributor access or higher and a full-access sign-in.</p>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/poll.js"></script><script src="/static/chat.js"></script>{% endblock %}

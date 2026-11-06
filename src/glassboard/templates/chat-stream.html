@@ -1,0 +1,34 @@
+{# B58: the Chat stream (also served alone for the 5-second refresh). Messages oldest first; task and system
+   events folded into one-line markers that open the Timeline there. Text comes only from event_card (R2/R3). #}
+{% set sh = sess.handle %}{% set chq = "&channel=" ~ channel if channel else "" %}
+{% if chat.more %}<p class="chat-more">Showing the latest {{ chat.count }} messages. Older ones are in <a href="/s/{{ sh }}/conversations?mode=all">Conversations</a> and the <a href="/s/{{ sh }}">Timeline</a>.</p>{% endif %}
+{% if not chat["items"] %}<p class="chat-empty muted">{% if channel %}No messages in #{{ channel }} yet.{% else %}No messages yet.{% endif %}{% if can_post %} Write the first one below.{% endif %}</p>{% endif %}
+<ol class="chat-list">
+{% for it in chat["items"] %}
+{% if it.kind == "marker" %}
+  <li class="chat-marker"><a href="/s/{{ sh }}?before={{ it.last + 1 }}#e{{ it.first }}">{{ it.count }} task or system event{{ "s" if it.count != 1 }}</a>{% if it.labels %}<span class="chat-marker-text">{{ it.labels | join(" · ") }}{% if it.rest %} · {{ it.rest }} more{% endif %}</span>{% endif %}</li>
+{% else %}{% set ev = it.card %}
+  <li class="ev chat-msg{% if it.re %} chat-reply{% endif %}{% if it.i_owe %} chat-owed-me{% endif %}" id="m{{ it.seq }}" data-event="{{ it.type }}" data-seq="{{ it.seq }}" data-actor="{{ it.actor }}" data-type="{{ it.type }}">
+    {% if it.pinned %}<p class="chat-pinned">{% if it.other_channel %}Still open, from {% if it.channel %}#{{ it.channel }}{% else %}the whole session{% endif %}{% else %}Still open, from earlier{% endif %}</p>{% endif %}
+    {% if it.quote %}<a class="chat-quote" href="{% if it.quote.on_page %}#m{{ it.quote.seq }}{% else %}/s/{{ sh }}/conversations?mode=thread&amp;thread={{ it.quote.seq }}#message-{{ it.quote.seq }}{% endif %}"><span aria-hidden="true">↩</span> reply to @{{ it.quote.actor }} <span class="ev-re-kind">{{ it.quote.type }}</span> #{{ it.quote.seq }}{% if it.quote.text %} <span class="chat-quote-text">«{{ it.quote.text }}»</span>{% endif %}</a>{% endif %}
+    <div class="ev-head">
+      <span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span>
+      <span class="ev-kind">{{ ev.head.kind if ev.head else it.type }}</span>
+      {% if it.owed %}{% if it.i_owe %}<span class="ev-state ev-owed">you owe an answer</span>{% elif it.holders %}<span class="ev-state ev-owed">awaiting {% for h in it.holders %}@{{ h }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% else %}<span class="ev-state ev-answered">{{ "answered" if it.type == "question" else "closed" }}</span>{% endif %}{% endif %}
+      {% if it.channel %}<a class="chat-channel" href="/s/{{ sh }}/chat?channel={{ it.channel }}">#{{ it.channel }}</a>{% endif %}
+      {% if ev.head and ev.head.to %}<span class="ev-to"><span aria-hidden="true">→</span> {% for h in ev.head.to %}{% if h == "all" %}everyone{% else %}@{{ h }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+      {% if ev.head and ev.head.task %}<a class="ev-task" href="/s/{{ sh }}/t/{{ ev.head.task }}">T{{ ev.head.task }}</a>{% endif %}
+      <span class="ev-meta" title="{{ ev.lines[0].text if ev.lines else '' }}">#{{ it.seq }} · {{ it.time }}</span>
+    </div>
+    {% for item in ev.body %}{% if item.kind == "paras" %}<div class="ev-text">{% for para in item.paras %}<p>{% for seg in para %}<span class="seg{% if seg.pre %} pre{% endif %}">{{ seg.text }}</span>{% endfor %}</p>{% endfor %}</div>{% else %}<div class="ln {{ item.cls }}">{{ item.text }}</div>{% endif %}{% endfor %}
+    {% if can_post or it.may_stand_down or it.decide_hold %}<div class="chat-actions">
+      {% if can_post %}<a href="/s/{{ sh }}/chat?reply={{ it.seq }}{{ chq }}#composer" data-chat-reply>Reply</a>
+      {% if it.actor != viewer.p.handle %}<a href="/s/{{ sh }}/chat?ask={{ it.seq }}{{ chq }}#composer" data-chat-ask>Ask @{{ ev.actor_name }}</a>{% endif %}{% endif %}
+      {% if it.decide_hold %}<a href="/">Decide on Home</a>{% endif %}
+      {% if it.may_stand_down %}<a href="/s/{{ sh }}/agent?as={{ it.actor }}#standdown">Stand down…</a>{% endif %}
+    </div>{% endif %}
+  </li>
+{% endif %}
+{% endfor %}
+</ol>
+<div id="chat-end"></div>

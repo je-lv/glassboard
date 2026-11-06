@@ -1,6 +1,6 @@
 {# Session navigation: tabs with number keys (keys.js), count badges, search and the live indicator. #}
 {% set nb = nav_badges(sess, viewer) %}
-{% set tabs = [("now", "Now", "/now"), ("timeline", "Timeline", ""), ("conversations", "Conversations", "/conversations"),
+{% set tabs = [("now", "Now", "/now"), ("chat", "Chat", "/chat"), ("timeline", "Timeline", ""), ("conversations", "Conversations", "/conversations"),
                ("board", "Board", "/board"), ("progress", "Progress", "/progress"), ("artifacts", "Artifacts", "/artifacts")] %}
 {% if experimental_ui %}{% set tabs = tabs + [("observe", "Observe", "/observe")] %}{% endif %}
 <nav class="subnav" aria-label="session">

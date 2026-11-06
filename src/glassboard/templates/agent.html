@@ -8,7 +8,7 @@
   <select name="as">{% for m in members %}<option value="{{ m }}"{% if m == who %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>
   <button type="submit" class="secondary">show</button> <a href="/s/{{ sess.handle }}">back to timeline</a>
 </form>
-{% if is_agent %}<section class="card standdown-card"><h2>Stand-down</h2>
+{% if is_agent %}<section class="card standdown-card" id="standdown"><h2>Stand-down</h2>
 {% if standdown %}<p>Requested at #{{ standdown.seq }} by @{{ standdown.by }}{% if standdown.done_seq %}; {{ who }} answered at #{{ standdown.done_seq }} after releasing its work.{% else %}; {{ who }} has not answered yet. It must release its claims and leases and save a checkpoint first.{% endif %}</p>
 {% if standdown.reason_line %}<p class="muted">Reason: {{ standdown.reason_line }}</p>{% endif %}
 <p class="muted">Until it is lifted, {{ who }} cannot claim tasks or take leases. Other agents keep working.</p>

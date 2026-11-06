@@ -69,7 +69,7 @@ def seeded(gb):
 def test_every_dashboard_page_shows_at_most_one_primary(seeded):
     gb, n = seeded
     c = login(gb)
-    pages = ["/", "/agents", "/s/s1", "/s/s1/board", f"/s/s1/t/{n}", "/s/s1/conversations", "/s/s1/artifacts",
+    pages = ["/", "/agents", "/s/s1", "/s/s1/board", f"/s/s1/t/{n}", "/s/s1/conversations", "/s/s1/chat", "/s/s1/artifacts",
              "/s/s1/progress", "/s/s1/team", "/s/s1/new-task", "/s/s1/agent?as=jose/claude", "/docs"]
     checked = 0
     for path in pages:

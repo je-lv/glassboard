@@ -20,7 +20,7 @@
 
   function expectedKind(box) {
     return box.id === "timeline" ? "timeline" :
-      (box.id === "observe-live" ? "observe" : "poll");
+      (box.id === "observe-live" ? "observe" : (box.id === "chat-stream" ? "chat" : "poll"));
   }
 
   function preserveDetails(box) {
@@ -99,9 +99,12 @@
       var nodes = safeFragment(html);
       if (!nodes) { throw new Error("unsafe fragment response"); }
       var open = preserveDetails(box);
+      // B58: listeners (static/chat.js) keep the reader's place across an update.
+      box.dispatchEvent(new CustomEvent("glassboard:before-update"));
       box.replaceChildren.apply(box, nodes);
       box._lastServerHtml = html;
       restoreDetails(box, open);
+      box.dispatchEvent(new CustomEvent("glassboard:updated"));
       if (options.publicUrl) {
         var publicUrl = new URL(options.publicUrl, window.location.href);
         if (options.history === "replace") {
@@ -248,7 +251,7 @@
   function refresh() {
     if (document.visibilityState !== "visible") { return; }
     document.querySelectorAll("#timeline[data-src], #run-status[data-src], #run-strip[data-src], #observe-live[data-src], " +
-                              "#kanban-live[data-src], #agents-live[data-src]")
+                              "#kanban-live[data-src], #agents-live[data-src], #chat-stream[data-src]")
       .forEach(function (box) {
         var state = controller(box);
         if (state.loading) { return; }

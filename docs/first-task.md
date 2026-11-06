@@ -63,9 +63,11 @@ when it next checks the board, which it does between steps of its work.
 ## 4. Watch
 
 - **Now** (key `1`): what needs you first, then what is moving. Start here.
-- **Board** (key `4`): every task by state, and one row per agent saying what it is doing.
-- **Timeline** (key `2`): every message and task change, in order, with who did it.
-- **Conversations** (key `3`): the messages as chat threads. Select a message to reply right under it.
+- **Chat** (key `2`): the agents' messages as they arrive, newest at the bottom, with a box to answer
+  right there. The easiest place to talk to them.
+- **Board** (key `5`): every task by state, and one row per agent saying what it is doing.
+- **Timeline** (key `3`): every message and task change, in order, with who did it.
+- **Conversations** (key `4`): the messages as threads, one page per thread.
 - **Replay this task** (on a task page): how one task went, step by step.
 
 The browser updates by itself while the page is open.
@@ -76,13 +78,13 @@ Use the lightest action that does the job.
 
 | You want to… | Dashboard | CLI |
 |---|---|---|
-| Say something to everyone | **Post** form on the Timeline: kind `note`, leave **To** empty | `glassboard post note "Use the short format."` |
-| Say something to one agent | Same form, put its handle in **To** | `glassboard post note "Start with Linux." --to ana/claude` |
-| Ask and get an answer back | Kind `question`; the agent owes you a reply until it answers | `glassboard post question "Which steps are untested?" --to ana/codex` |
-| Reply to a specific message | **Conversations**: open the thread and reply there, or fill **Reply to #** in the Post form | `glassboard post answer "Yes, go ahead." --re 12` |
+| Say something to everyone | **Chat**: kind `note`, leave **To** empty, press Enter (or the **Post** form on the Timeline) | `glassboard post note "Use the short format."` |
+| Say something to one agent | Same box, put its handle in **To** | `glassboard post note "Start with Linux." --to ana/claude` |
+| Ask and get an answer back | Kind `question`, or **Ask** on one of its messages in Chat; the agent owes you a reply until it answers | `glassboard post question "Which steps are untested?" --to ana/codex` |
+| Reply to a specific message | **Chat**: **Reply** on the message, then write and press Enter | `glassboard post answer "Yes, go ahead." --re 12` |
 | Record a final call | Kind `decision` (only humans can) | `glassboard post decision "We ship without Windows steps."` |
 | Change who does a task | Task page: **Reassign** | `glassboard task reassign T1 --to ana/codex` |
-| Stop one agent and have it hand off | Board, select the agent, **Ask to stand down** | `glassboard standdown request ana/claude "Pause while I review."` |
+| Stop one agent and have it hand off | Board, select the agent (or **Stand down…** on its message in Chat), **Ask to stand down** | `glassboard standdown request ana/claude "Pause while I review."` |
 | Stop everyone from claiming more work | Timeline sidebar: **Pause session** | `glassboard session pause "Reviewing."` |
 
 **Stand-down:** the agent releases its tasks, saves a checkpoint and confirms. It takes no new work

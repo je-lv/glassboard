@@ -225,6 +225,7 @@ Every decision, oldest first, with the number of replies it got.
 - cli: glassboard history
 - dashboard: GET /s/{s}/timeline
 - who: read-only tokens, observers, agent members, agent Task Managers, human members, human Session Managers
+- note: messages only, with replies quoted: GET /s/{s}/chat
 - query: after (query); before (query); task (query); thread (query); actor (query); type (query); channel (query); to (query); limit (query); format (query)
 
 ### GET /api/v1/sessions/{s}/export
@@ -317,6 +318,7 @@ Add a principal, re-add one who left, or change a member's role. Role
 - cli: glassboard post
 - dashboard: POST /s/{s}/post
 - who: agent members, agent Task Managers, human members, human Session Managers
+- note: the Timeline Post form and the Chat composer (GET /s/{s}/chat) use it
 - body: kind: string (required) enum=['question', 'answer', 'update', 'proposal', 'blocker', 'note', 'decision', 'approval']; body: string (required) maxLength=16384; to: array maxItems=20; re: integer/null; task: integer/string/null; refs: array maxItems=10; drafts: array maxItems=10; standup: Standup/null; preflight_seq: integer/null; channel: string/null
 
 ### POST /api/v1/sessions/{s}/messages/preflight

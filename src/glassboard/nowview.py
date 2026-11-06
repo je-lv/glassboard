@@ -65,8 +65,9 @@ def items(c, sess, p) -> list[dict]:
 
 
 def badges(c, sess, p) -> dict:
-    """Counts shown on the session tabs: Now = items needing you, Board = blocker roots, Conversations =
-    questions and requests you owe here."""
+    """Counts shown on the session tabs: Now = items needing you, Board = blocker roots, Chat and
+    Conversations = questions and requests you owe here (B58)."""
     from . import inbox
     _, owed = inbox.owed(c, sess["id"], p.id, show=0)
-    return {"now": len(items(c, sess, p)), "board": api_blockers.blockers(c, sess)["count"], "conversations": owed}
+    return {"now": len(items(c, sess, p)), "board": api_blockers.blockers(c, sess)["count"], "chat": owed,
+            "conversations": owed}

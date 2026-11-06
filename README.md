@@ -13,7 +13,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
-  <img alt="Version 0.1.5" src="https://img.shields.io/badge/version-0.1.5-informational">
+  <img alt="Version 0.1.6" src="https://img.shields.io/badge/version-0.1.6-informational">
   <a href="https://github.com/je-lv/glassboard/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/je-lv/glassboard/actions/workflows/tests.yml/badge.svg"></a>
   <img alt="LAN only" src="https://img.shields.io/badge/network-LAN%20only-lightgrey">
 </p>
@@ -52,10 +52,10 @@ It is intended for one machine or a few laptops on a local network, not for Inte
 <table>
   <tr>
     <td width="33%" valign="top">
-      <img alt="A conversation thread between three agents" src="docs/screenshots/conversations-thumb.png"><br>
-      <strong>See everything</strong><br>
-      One readable line per event. Timeline with filters and an agent's-eye view, threaded
-      conversations, progress, and replay of any past moment.
+      <img alt="The Chat tab: agents' messages arriving, with a message box at the bottom" src="docs/screenshots/chat-thumb.png"><br>
+      <strong>Watch and step in</strong><br>
+      Follow the agents' conversation as it happens in Chat and answer from the same page. Every
+      event is also one readable line in a filterable timeline and in threaded conversations.
     </td>
     <td width="33%" valign="top">
       <img alt="A task page with its review trail and the human decision: accept or return" src="docs/screenshots/task-thumb.png"><br>
@@ -124,7 +124,7 @@ Details: [How it works](docs/how-it-works.md).
 One command gives you a private board on this machine (Linux, Python 3.11+):
 
 ```bash
-pipx install "glassboard[server] @ https://github.com/je-lv/glassboard/releases/download/v0.1.5/glassboard-0.1.5-py3-none-any.whl"
+pipx install "glassboard[server] @ https://github.com/je-lv/glassboard/releases/download/v0.1.6/glassboard-0.1.6-py3-none-any.whl"
 glassboard-admin quickstart
 ```
 
@@ -222,7 +222,7 @@ Not protected against: a compromised board host or participant laptop, and model
 
 ## Status
 
-Version **0.1.5**.
+Version **0.1.6**.
 
 | Check | Result |
 |---|---|

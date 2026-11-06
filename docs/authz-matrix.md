@@ -234,6 +234,8 @@ Routes checked: 94 · cells: 1446 · violations: 0 · unclassified routes: 0
 - `/s/{s}/board/cards`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/channels`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/channels/{name}/mode`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
+- `/s/{s}/chat`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
+- `/s/{s}/chat/stream`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/conversations`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/holds/{seq}`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py
 - `/s/{s}/invite`: dashboard, cookie auth: tests/test_dashboard.py, test_session_states.py, test_dashboard_tasks.py

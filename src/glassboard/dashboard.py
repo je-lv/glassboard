@@ -1504,7 +1504,7 @@ def mount(app: FastAPI) -> None:
             members = [r[0] for r in c.execute("SELECT p.handle FROM member m JOIN principal p ON p.id=m.principal_id "
                                                 "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
         sh = sess["handle"]
-        views = [("Now", "/now"), ("Timeline", ""), ("Conversations", "/conversations"), ("Board", "/board"),
+        views = [("Now", "/now"), ("Chat", "/chat"), ("Timeline", ""), ("Conversations", "/conversations"), ("Board", "/board"),
                  ("Progress", "/progress"), ("Artifacts", "/artifacts")]
         out = [{"kind": "view", "label": label, "href": f"/s/{sh}{path}"} for label, path in views]
         out += [{"kind": "task", "label": f"T{t['num']} {render.r2(t['title'])[:120]} ({t['status'].replace('_', ' ')})",
@@ -1828,6 +1828,58 @@ def mount(app: FastAPI) -> None:
         return page("conversations.html", viewer=viewer, sess=sess, convo=convo, members=members,
                     can_reply=viewer.p.scope == "full" and me["role"] != "observer",
                     admin_mode=False, sessions_list=[], op=ids.new_ulid(), error=request.query_params.get("err"))
+
+    def _chat_ctx(request: Request, s: str, viewer: Viewer, database: db.Database) -> dict:
+        """B58: the Chat tab model (messages, markers, channels, members, composer defaults)."""
+        from . import api_channels, chatview
+        channel = request.query_params.get("channel") or None
+        if channel is not None and not api_channels.NAME_RE.match(channel):
+            channel = None
+        show_events = request.query_params.get("events") != "0"
+        def num(name):
+            raw = request.query_params.get(name, "")
+            return int(raw) if raw.isdigit() else None
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            channels = api_channels.list_view(c, sess, viewer.p.id)["channels"]
+            if channel is not None and channel not in {ch["name"] for ch in channels}:
+                channel = None
+            chat = chatview.stream(c, sess, viewer, me, channel, show_events)
+            members = [r[0] for r in c.execute(
+                "SELECT p.handle FROM member m JOIN principal p ON p.id=m.principal_id "
+                "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
+            ask = num("ask")
+            target = chatview.reply_target(c, sess, ask if ask is not None else num("reply"))
+        query = {k: v for k, v in (("channel", channel), ("events", None if show_events else "0")) if v}
+        draft = {"kind": "note", "to": "", "re": None}
+        if target:
+            to = target["actor"] if target["actor"] != viewer.p.handle else ""
+            kind = "question" if ask is not None else ("answer" if target["type"] == "question" else "note")
+            draft = {"kind": kind, "to": to, "re": target}
+        human_coordinator = viewer.p.kind == "human" and me["role"] == "coordinator"
+        kinds = ["note", "question", "answer", "update", "proposal", "blocker"] + (["decision"] if human_coordinator else [])
+        return {"viewer": viewer, "sess": sess, "me": me, "chat": chat, "channel": channel, "show_events": show_events,
+                "channels": channels, "open_channels": [ch for ch in channels if not ch["archived"]],
+                "members": members, "draft": draft, "kinds": kinds,
+                "query": urllib.parse.urlencode(query),
+                "events_query": urllib.parse.urlencode({**query, "events": "0"} if show_events
+                                                       else {k: v for k, v in query.items() if k != "events"}),
+                "can_post": viewer.p.scope == "full" and me["role"] != "observer",
+                "can_coordinate": human_coordinator, "op": ids.new_ulid()}
+
+    @app.get("/s/{s}/chat", include_in_schema=False)
+    def chat_page(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                  database: db.Database = Depends(get_db)):
+        """B58: watch the conversation and step in: messages oldest first, a composer at the bottom."""
+        return page("chat.html", **_chat_ctx(request, s, viewer, database))
+
+    @app.get("/s/{s}/chat/stream", include_in_schema=False)
+    def chat_stream(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                    database: db.Database = Depends(get_db)):
+        """B58: the message stream alone, for the 5-second refresh (static/poll.js)."""
+        response = page("chat-stream.html", **_chat_ctx(request, s, viewer, database))
+        response.headers["X-Glassboard-Fragment"] = "chat"
+        return response
 
     @app.get("/admin/conversations", include_in_schema=False)
     def admin_conversations(request: Request, viewer: Viewer = Depends(current_viewer),
@@ -2523,11 +2575,17 @@ def mount(app: FastAPI) -> None:
         check_post(request, form, viewer)
         return_to = form.get("return_to", "")
         destination = f"/s/{urllib.parse.quote(s)}/conversations" if return_to == "conversations" \
-            else f"/s/{urllib.parse.quote(s)}"
+            else f"/s/{urllib.parse.quote(s)}/chat" if return_to == "chat" else f"/s/{urllib.parse.quote(s)}"
         return_thread = form.get("return_thread", "")
         if return_to == "conversations" and return_thread.isdigit():
             destination += "?mode=thread&thread=" + return_thread
-        to = [h.strip() for h in form.get("to", "").split(",") if h.strip()]
+        if return_to == "chat":                                 # B58: back to the same channel filter
+            from .api_channels import NAME_RE as _CH
+            return_channel = form.get("return_channel", "")
+            if _CH.match(return_channel):
+                destination += "?channel=" + return_channel
+        # B58 [P]: the browser forms accept "@ana" as well as "ana" (the @-completion in Chat inserts handles).
+        to = [h.strip().removeprefix("@") for h in form.get("to", "").split(",") if h.strip().removeprefix("@")]
         try:
             body = MessageIn(kind=form.get("kind", ""), body=form.get("body", ""), to=to,
                              re=int(form["re"]) if form.get("re", "").isdigit() else None,
@@ -2550,7 +2608,8 @@ def mount(app: FastAPI) -> None:
                 separator = "&" if "?" in destination else "?"
                 return _security_headers(RedirectResponse(f"{destination}{separator}err={e.code}", status_code=303))
             raise
-        anchor = f"#message-{body.re}" if return_to == "conversations" and body.re else ""
+        anchor = f"#message-{body.re}" if return_to == "conversations" and body.re else \
+            "#chat-end" if return_to == "chat" else ""
         return _security_headers(RedirectResponse(destination + anchor, status_code=303))
 
     @app.post("/s/{s}/preflight", include_in_schema=False)

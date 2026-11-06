@@ -39,7 +39,7 @@ Routes: 91 · tracked gaps: 16 · one side missing by design: 15
 | `POST /api/v1/sessions/{s}/context/compacted` | `glassboard hook compacted` | - | by design: sent by an opt-in client hook after the client compacted its context; humans see the event and the Agents panel flag |
 | `GET /api/v1/sessions/{s}/decisions` | `glassboard decisions` | `GET /s/{s}/timeline` | filter: decisions |
 | `GET /api/v1/sessions/{s}/digest` | `glassboard digest` | - | gap: planned: 'since my last visit' view in the dashboard |
-| `GET /api/v1/sessions/{s}/events` | `glassboard history` | `GET /s/{s}/timeline` |  |
+| `GET /api/v1/sessions/{s}/events` | `glassboard history` | `GET /s/{s}/timeline` | messages only, with replies quoted: GET /s/{s}/chat |
 | `GET /api/v1/sessions/{s}/export` | `glassboard export` | `GET /s/{s}/record.jsonl` |  |
 | `GET /api/v1/sessions/{s}/flow` | `glassboard flow` | - | gap: planned: flow metrics on the progress page |
 | `POST /api/v1/sessions/{s}/holds` | `glassboard hold raise` | - | by design: agents raise holds; humans decide them, post a question, or pause the session |
@@ -53,7 +53,7 @@ Routes: 91 · tracked gaps: 16 · one side missing by design: 15
 | `GET /api/v1/sessions/{s}/members` | `glassboard members list` | `GET /s/{s}/team` |  |
 | `POST /api/v1/sessions/{s}/members` | `glassboard members add` | `POST /s/{s}/members` |  |
 | `DELETE /api/v1/sessions/{s}/members/{handle:path}` | `glassboard members remove` | `POST /s/{s}/members` |  |
-| `POST /api/v1/sessions/{s}/messages` | `glassboard post` | `POST /s/{s}/post` |  |
+| `POST /api/v1/sessions/{s}/messages` | `glassboard post` | `POST /s/{s}/post` | the Timeline Post form and the Chat composer (GET /s/{s}/chat) use it |
 | `POST /api/v1/sessions/{s}/messages/preflight` | `glassboard preflight` | `POST /s/{s}/preflight` |  |
 | `POST /api/v1/sessions/{s}/questions/{seq}/resolve` | `glassboard question resolve` | - | gap: planned: resolve a question from the dashboard |
 | `POST /api/v1/sessions/{s}/quiet-hours` | `glassboard quiet set` | `POST /s/{s}/quiet-hours` | humans only: agent view, Quiet hours; also `quiet clear`; read in `quiet show` and the Agents panel |
