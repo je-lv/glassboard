@@ -288,7 +288,7 @@ def test_non_members_get_404(d):
 
 def test_csp_and_security_headers_on_every_page(d):
     c = login(d)
-    for path in ("/", "/s/s1", "/s/s1/timeline", "/s/s1/agent?as=ana", "/login"):
+    for path in ("/", "/s/s1", "/s/s1/timeline", "/s/s1/agent?as=ana", "/login", "/s/s1/now", "/s/s1/search?q=x"):
         r = c.get(path)
         assert r.headers["content-security-policy"] == CSP, path
         assert r.headers["x-frame-options"] == "DENY" and r.headers["x-content-type-options"] == "nosniff"
@@ -297,10 +297,12 @@ def test_csp_and_security_headers_on_every_page(d):
         scripts = re.findall(r"<script[^>]*>", r.text)
         expected = {
             "/": ["panels.js", "notify.js", "confirm.js", "copy.js"],
-            "/s/s1": ["poll.js", "workbench.js", "notify.js", "confirm.js", "copy.js"],
+            "/s/s1": ["keys.js", "poll.js", "workbench.js", "notify.js", "confirm.js", "copy.js"],
             "/s/s1/timeline": [],
             "/s/s1/agent?as=ana": ["notify.js", "confirm.js", "copy.js"],
             "/login": [],
+            "/s/s1/now": ["keys.js", "notify.js", "confirm.js", "copy.js"],
+            "/s/s1/search?q=x": ["keys.js", "notify.js", "confirm.js", "copy.js"],
         }[path]
         expected = [f'<script src="/static/{name}">' for name in expected]
         assert scripts == expected, path
@@ -382,7 +384,8 @@ def test_at_5_6_xss_corpus_is_inert(d):
     assert "⟨U+202E⟩evil.exe" in s1                             # bidi markers visible
     assert "{{ 7*7 }}" in s1 and ">49<" not in s1                          # no template evaluation
     assert "&lt;script&gt;alert(&#39;dn&#39;)&lt;/script&gt;" in s1      # display_name sanitized, then escaped
-    assert re.findall(r"<script[^>]*>", s1) == ['<script src="/static/poll.js">',
+    assert re.findall(r"<script[^>]*>", s1) == ['<script src="/static/keys.js">',
+                                                   '<script src="/static/poll.js">',
                                                    '<script src="/static/workbench.js">',
                                                    '<script src="/static/notify.js">',
                                                    '<script src="/static/confirm.js">',

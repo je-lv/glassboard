@@ -68,6 +68,11 @@ def main(argv=None) -> int:
     rs = sub.add_parser("restore"); rs.add_argument("backup_file")
     rs.add_argument("--age-identity", help="age identity file for an encrypted backup")
     rs.add_argument("--journal-from", help="off-host copy of security.journal, after a total host loss")
+    qs = sub.add_parser("quickstart", help="a private board on this machine in one command, with join commands for your agents")
+    qs.add_argument("--dir", help="where the board keeps its data (default ~/.local/share/glassboard/quickstart)")
+    qs.add_argument("--port", type=int, default=8787); qs.add_argument("--human", help="your handle (default: your login name)")
+    qs.add_argument("--agents", help="comma-separated agent clients (default: the ones found on this machine)")
+    qs.add_argument("--stop", action="store_true", help="stop the quickstart board")
     st = sub.add_parser("setup-tls", help="publish the board CA and print the join command")
     st.add_argument("--host", default=os.environ.get("GLASSBOARD_HOST", "board.lan"))
     st.add_argument("--port", type=int, default=int(os.environ.get("GLASSBOARD_TLS_PORT", "8443")))
@@ -76,6 +81,9 @@ def main(argv=None) -> int:
 
     if args.cmd == "setup-tls":
         return _setup_tls(args)
+    if args.cmd == "quickstart":
+        from . import quickstart
+        return quickstart.run(args, main)
     jpath = args.journal or journal.default_path(args.db)
     if args.cmd == "restore":
         # Before anything opens the database: restore needs the instance stopped and swaps the file.

@@ -17,9 +17,11 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || typeof j.count !== "number") { return; }
+        // Quiet hours: items in a session where you are quiet count but do not notify.
+        var n = typeof j.notify === "number" ? j.notify : j.count;
         var last = parseInt(sessionStorage.getItem(key) || "0", 10);
-        sessionStorage.setItem(key, String(j.count));
-        if (j.count > last && Notification.permission === "granted") {
+        sessionStorage.setItem(key, String(n));
+        if (n > last && Notification.permission === "granted") {
           new Notification("Glassboard", { body: j.count + " item(s) need your attention", tag: "glassboard-attention" });
         }
       })

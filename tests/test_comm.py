@@ -115,7 +115,7 @@ def test_dashboard_standup_panel_and_attention_count(b):
     html = c.get("/s/s1").text
     assert "Stand-up" in html and "the &lt;b&gt;FAQ&lt;/b&gt;" in html and "\u202e" not in html
     r = c.get("/attention-count")
-    assert r.status_code == 200 and r.json() == {"count": 1} and "content-security-policy" in r.headers
+    assert r.status_code == 200 and r.json() == {"count": 1, "notify": 1} and "content-security-policy" in r.headers
     assert '<script src="/static/notify.js"></script>' in c.get("/").text
     js = c.get("/static/notify.js").text
     assert "innerHTML" not in js and "/attention-count" in js

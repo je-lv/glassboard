@@ -301,7 +301,7 @@ def test_progress_tab_shows_recorded_work_and_who_did_it(b):
     r = c.get("/s/s1/progress")
     assert r.status_code == 200 and "content-security-policy" in r.headers
     html = r.text
-    assert 'aria-current="page">Progress</a>' in html
+    assert re.search(r'aria-current="page"><span class="tab-key" aria-hidden="true">\d</span>Progress', html)
     assert "FAQ drafted" in html and "@jose/claude" in html and "@jose" in html
     assert "1 of 1</strong> work tasks accepted" in html and "Who is doing what" in html
     assert "Checklist completed" in html and "Submitted for review" in html and "Accepted" in html

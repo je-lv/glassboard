@@ -220,6 +220,69 @@ def review_view(c, sid: str, task) -> dict:
     return {"reviewer": h.get(task["reviewer_id"]), "submission": submitted, "review": review}
 
 
+def verification_view(c, sid: str, task, rv: dict) -> dict | None:
+    """0.1.5 (ERRATA E41): submission, review of that exact submission, acceptance, and every gap between
+    them, from recorded events only. None before anything was submitted (unless the task is done)."""
+    sub, review = rv["submission"], rv["review"]
+    if sub is None and task["status"] != "done":
+        return None
+    gaps: list[str] = []
+    steps: dict = {"submitted": None, "reviewed": None, "accepted": None}
+    if sub is None:
+        gaps.append("accepted with no submission recorded")
+    else:
+        tests = sub["tests"]
+        counts = {k: sum(1 for t in tests if t["outcome"] == k) for k in ("pass", "fail", "skipped")}
+        steps["submitted"] = {"seq": sub["seq"], "commit": sub["commit"], "tests": counts}
+        if not sub["commit"]:
+            gaps.append("no commit recorded")
+        if not tests:
+            gaps.append("no tests recorded")
+        elif counts["fail"]:
+            gaps.append(f"{counts['fail']} test(s) failed")
+    if review is not None and sub is not None and review["submission_seq"] in (sub["seq"], None):
+        steps["reviewed"] = {"seq": review["seq"], "by": review["by"], "verdict": review["verdict"]}
+        if review["submission_seq"] is None:            # a review from before reviews named their submission
+            gaps.append("the review does not name this exact submission")
+        if review["verdict"] != "approve":
+            gaps.append("the review asked for changes")
+    elif sub is not None:
+        older = c.execute("SELECT 1 FROM event WHERE session_id=? AND task_num=? AND type='task.reviewed' AND seq<?",
+                          (sid, task["num"], sub["seq"])).fetchone()
+        if older:
+            gaps.append("reviewed only an earlier submission")
+        if rv["reviewer"] is None:
+            gaps.append("no reviewer named")
+        elif task["status"] == "review":
+            gaps.append(f"waiting for @{rv['reviewer']} to review")
+    acc = c.execute("SELECT e.seq, e.actor_id, p.handle, p.kind FROM event e JOIN principal p ON p.id=e.actor_id "
+                    "WHERE e.session_id=? AND e.task_num=? AND e.type='task.accepted' AND e.seq>? ORDER BY e.seq DESC "
+                    "LIMIT 1", (sid, task["num"], sub["seq"] if sub else 0)).fetchone() if task["status"] == "done" else None
+    if acc is not None:
+        steps["accepted"] = {"seq": acc["seq"], "by": acc["handle"], "by_kind": acc["kind"]}
+        if steps["reviewed"] is None or steps["reviewed"]["verdict"] != "approve":
+            gaps.append("accepted without an approving review of this submission")
+    return {"steps": steps, "gaps": gaps, "verified": task["status"] == "done" and not gaps}
+
+
+def verification_lines(v: dict | None) -> list[str]:
+    if v is None:
+        return []
+    s = v["steps"]
+    parts = []
+    if s["submitted"]:
+        t = s["submitted"]["tests"]
+        parts.append(f"submitted #{s['submitted']['seq']}"
+                     + (f" at {s['submitted']['commit'][:12]}" if s["submitted"]["commit"] else "")
+                     + f" (tests {t['pass']} pass, {t['fail']} fail, {t['skipped']} skipped)")
+    if s["reviewed"]:
+        parts.append(f"reviewed #{s['reviewed']['seq']} by @{s['reviewed']['by']}: {s['reviewed']['verdict']}")
+    if s["accepted"]:
+        parts.append(f"accepted #{s['accepted']['seq']} by @{s['accepted']['by']}")
+    head = "verified" if v["verified"] else ("gaps: " + "; ".join(v["gaps"]) if v["gaps"] else "in progress")
+    return [render.section(f"--- verification: {head} ---"), render.inline_line("chain", " -> ".join(parts) or "none")]
+
+
 def latest_submission(c, sid: str, num: int) -> dict | None:
     row = c.execute("SELECT seq, data FROM event WHERE session_id=? AND task_num=? AND type='task.submitted' "
                     "ORDER BY seq DESC LIMIT 1", (sid, num)).fetchone()
@@ -494,6 +557,7 @@ def show_task(s: str, t: str, request: Request, format: Literal["json", "text"] 
         sess, _ = require_member(c, s, p)
         task = _load(c, sess["id"], num)
         view = task_view(c, task, sess)
+        view["verification"] = verification_view(c, sess["id"], task, view)
         evs = inbox.views(c, c.execute("SELECT * FROM (SELECT * FROM event WHERE session_id=? AND task_num=? "
                                        "ORDER BY seq DESC LIMIT 20) ORDER BY seq", (sess["id"], num)))
     if format == "text" or request.headers.get("accept", "").split(",")[0].strip().startswith("text/plain"):
@@ -508,6 +572,7 @@ def show_task(s: str, t: str, request: Request, format: Literal["json", "text"] 
             for item in view["submission"]["tests"]:
                 detail = f" ({item['detail']})" if item.get("detail") else ""
                 lines.append(render.inline_line("test", f"{item['outcome']}: {item['command']}{detail}"))
+        lines.extend(verification_lines(view["verification"]))
         handoff = next((v for v in reversed(evs) if (v.get("data") or {}).get("handoff_fields")), None)
         if handoff is not None:                         # the next claimant reads this first
             lines.append(render.section(f"--- latest handoff #{handoff['seq']} by {handoff['actor']} ---"))
@@ -687,6 +752,8 @@ def claim(s: str, t: str, body: ClaimIn, key: str = Depends(idempotency_key),
         if tx.me["role"] not in ("member", "coordinator"):
             raise ApiError(403, "forbidden", "Observers cannot claim tasks.")
         _state(tx, "task.claim")
+        from .api_holds import refuse_if_standing_down
+        refuse_if_standing_down(c, sid, p.id)
         if task["status"] in ACTIVE:
             raise ApiError(409, "task_already_claimed", "Someone already holds this task.",
                            details={"claimant": inbox.handle_map(c, [task["claimant_id"]]).get(task["claimant_id"]),

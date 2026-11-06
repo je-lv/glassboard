@@ -92,6 +92,18 @@ _env.filters["ago_min"] = lambda minutes: _ago(None if minutes is None else int(
 _env.filters["size"] = lambda n: human_size(n)
 
 
+def _since(ts: str | None) -> str:
+    """An ISO timestamp as a readable age ("22m ago"); the exact time stays in a title attribute."""
+    from datetime import datetime, timezone
+    if not ts:
+        return "never"
+    t = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    return _ago(max(0, int((datetime.now(timezone.utc) - t).total_seconds())))
+
+
+_env.filters["since"] = _since
+
+
 class NeedLogin(Exception):
     pass
 
@@ -196,10 +208,15 @@ def _paragraphs(lines: list[str]) -> list[list[dict]]:
     return paras
 
 
+QUIET_READ_TYPES = ("consumer.", "wake.", "context.", "runtime.", "lease.", "checkpoint.", "message.preflight")
+
+
 def event_card(v: dict) -> dict:
     """One timeline event for the browser: a structured header, body paragraphs, muted metadata.
     `lines` keeps the canonical text for the forensic trace and for copying."""
     from .actors import badge, run_label
+    if v.get("read") == "unknown" or v["type"].startswith(QUIET_READ_TYPES):
+        v = {**v, "read": None}           # B54 clutter: unknown, or bookkeeping where reading is beside the point
     lines = view_lines(v)
     m = _HEAD.match(lines[0]) if lines else None
     head = None
@@ -221,8 +238,13 @@ def event_card(v: dict) -> dict:
     if block:
         body.append({"kind": "paras", "paras": _paragraphs(block)})
     mark, name, style = badge(v["actor"])
+    # E42 compact row: the first line of participant text, else the first metadata line (both already canonical)
+    first = next((ln[len(render.BLOCK):] for ln in lines[1:] if ln.startswith(render.BLOCK) and ln[len(render.BLOCK):].strip()),
+                 next((ln.strip() for ln in lines[1:] if ln.startswith(render.INLINE)), ""))
+    summary = first if len(first) <= 160 else first[:159] + "…"
     return {"seq": v["seq"], "type": v["type"], "lines": lines_view(lines), "head": head, "body": body,
-            "actor": v["actor"], "actor_mark": mark, "actor_name": name, "actor_style": style, "answered": False}
+            "actor": v["actor"], "actor_mark": mark, "actor_name": name, "actor_style": style, "answered": False,
+            "summary": summary}
 
 
 def lines_view(lines: list[str]) -> list[dict]:
@@ -342,7 +364,10 @@ def agent_rows_for_display(rows: list[dict]) -> list[dict]:
                         checkpoint_text=(f"#{r['checkpoint']['n']} · {age_text(r['checkpoint']['age_s'])} ago"
                                          if r["checkpoint"] else "none"),
                         doing_age=age_text(r["doing"]["age_s"]) if r["doing"] else None,
-                        run_started=(age_text(r["runs"][0]["started_age_s"]) if r["runs"] else None)))
+                        run_started=(age_text(r["runs"][0]["started_age_s"]) if r["runs"] else None),
+                        compaction_text=(f"#{r['compaction']['seq']} · {age_text(r['compaction']['age_s'])} ago "
+                                         f"({r['compaction']['trigger']})" if r.get("compaction") else None),
+                        compacted_unsaved=bool(r.get("compaction") and not r["compaction"]["checkpoint_since"])))
     return out
 
 
@@ -541,6 +566,16 @@ def check_raw_post(request: Request, viewer: Viewer) -> None:
 def mount(app: FastAPI) -> None:
     app.mount("/static", StaticFiles(directory=str(_pkg.joinpath("static"))), name="static")
 
+    def nav_badges(sess, viewer) -> dict:
+        """Counts for the session tabs (E42). Never fails a page: no badges rather than an error."""
+        from . import nowview
+        try:
+            with app.state.db.read() as c:
+                return nowview.badges(c, sess, viewer.p)
+        except Exception:                                   # noqa: BLE001
+            return {}
+    _env.globals["nav_badges"] = nav_badges
+
     @app.exception_handler(NeedLogin)
     async def _need_login(request: Request, exc: NeedLogin):
         if request.method == "GET":
@@ -646,7 +681,8 @@ def mount(app: FastAPI) -> None:
         # Participant text goes through R2/R3 before it reaches HTML: no raw hidden characters, even escaped.
         items = [{**i, "label": api_board._ATTN[i["kind"]], "min": i["age_s"] // 60,
                   "title_line": render.inline(i["title"], 120) if i.get("title") else None,
-                  "text_line": render.inline(i["text"], 120) if i.get("text") else None} for i in attn["items"]]
+                  "text_line": render.inline(i["text"], 120) if i.get("text") else None,
+                  "default_line": render.inline(i["default"], 120) if i.get("default") else None} for i in attn["items"]]
         return page("home.html", viewer=viewer, attention=items, op=ids.new_ulid(), error=request.query_params.get("err"),
                     sessions=[{**s, "title_line": render.inline(s["title"]), "o": over.get(s["session"])} for s in mine])
 
@@ -1188,13 +1224,163 @@ def mount(app: FastAPI) -> None:
             raise
         return _security_headers(RedirectResponse("/", status_code=303))
 
+    @app.post("/s/{s}/holds/{seq}", include_in_schema=False)
+    async def hold_form(s: str, seq: int, request: Request, viewer: Viewer = Depends(current_viewer),
+                        database: db.Database = Depends(get_db)):
+        """Uphold a hold or let the work proceed, from the home page (same code path as the API, B41)."""
+        from . import api_holds
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+        try:
+            body = api_holds.HoldDecision(decision=form.get("decision", ""), note=form.get("note") or None)
+            request.state.flash_ok = {"uphold": "hold_upheld", "proceed": "hold_proceed"}.get(body.decision)
+            api_holds.decide_hold(s, seq, body, key, sess["recovery_id"], None, viewer.p, database)
+        except ValidationError:
+            return _security_headers(RedirectResponse("/?err=invalid_request", status_code=303))
+        except ApiError as e:
+            if e.code in ("forbidden", "already_resolved", "not_found", "session_archived"):
+                return _security_headers(RedirectResponse(f"/?err={e.code}", status_code=303))
+            raise
+        return _security_headers(RedirectResponse("/", status_code=303))
+
+    def _standdown_back(s: str, who: str, err: str | None = None) -> RedirectResponse:
+        q = urllib.parse.urlencode({"as": who, **({"err": err} if err else {})})
+        return _security_headers(RedirectResponse(f"/s/{s}/agent?{q}", status_code=303))
+
+    @app.post("/s/{s}/standdowns", include_in_schema=False)
+    async def standdown_form(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                             database: db.Database = Depends(get_db)):
+        """Ask an agent to stand down, from its agent view (same code path as the API, B41)."""
+        from . import api_holds
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
+        who = form.get("member", "")
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+        try:
+            body = api_holds.StanddownIn(member=who, reason=form.get("reason", ""))
+            api_holds.request_standdown(s, body, key, sess["recovery_id"], None, viewer.p, database)
+        except ValidationError:
+            return _standdown_back(s, who, "invalid_request")
+        except ApiError as e:
+            if e.code in ("forbidden", "already_requested", "not_found", "session_archived"):
+                return _standdown_back(s, who, e.code)
+            raise
+        return _standdown_back(s, who)
+
+    @app.post("/s/{s}/standdowns/{seq}/lift", include_in_schema=False)
+    async def standdown_lift_form(s: str, seq: int, request: Request, viewer: Viewer = Depends(current_viewer),
+                                  database: db.Database = Depends(get_db)):
+        from . import api_holds
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
+        who = form.get("member", "")
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+        try:
+            body = api_holds.StanddownNote(note=form.get("note") or None)
+            api_holds.lift_standdown(s, seq, body, key, sess["recovery_id"], None, viewer.p, database)
+        except ValidationError:
+            return _standdown_back(s, who, "invalid_request")
+        except ApiError as e:
+            if e.code in ("forbidden", "already_resolved", "not_found", "session_archived"):
+                return _standdown_back(s, who, e.code)
+            raise
+        return _standdown_back(s, who)
+
+    @app.post("/s/{s}/quiet-hours", include_in_schema=False)
+    async def quiet_form(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                         database: db.Database = Depends(get_db)):
+        """Set or clear quiet hours from the agent view (same code path as the API, B56)."""
+        from . import api_quiet
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
+        who = form.get("member", "")
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+        try:
+            if form.get("action") == "clear":
+                body = api_quiet.QuietIn(member=who)
+            else:
+                body = api_quiet.QuietIn(member=who, start=form.get("start", "")[:5], end=form.get("end", "")[:5],
+                                         tz=form.get("tz", "").strip(), urgent=form.get("urgent") == "1")
+            api_quiet.set_quiet(s, body, key, sess["recovery_id"], None, viewer.p, database)
+        except ValidationError:
+            return _standdown_back(s, who, "invalid_request")
+        except ApiError as e:
+            if e.code in ("forbidden", "invalid_request", "not_found", "session_archived"):
+                return _standdown_back(s, who, e.code)
+            raise
+        return _standdown_back(s, who)
+
+    def _channel_back(s: str, err: str | None = None) -> RedirectResponse:
+        return _security_headers(RedirectResponse(f"/s/{urllib.parse.quote(s)}" + (f"?err={err}" if err else "") + "#channels",
+                                                  status_code=303))
+
+    @app.post("/s/{s}/channels", include_in_schema=False)
+    async def channel_create_form(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                                  database: db.Database = Depends(get_db)):
+        """B55: create a topic channel from the session page (same code path as the API)."""
+        from . import api_channels
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+        try:
+            body = api_channels.ChannelIn(name=form.get("name", "").strip().lstrip("#"), topic=form.get("topic") or None,
+                                          members=[h.strip().lstrip("@") for h in form.get("members", "").split(",") if h.strip()])
+            api_channels.create_channel(s, body, key, sess["recovery_id"], None, viewer.p, database)
+        except ValidationError:
+            return _channel_back(s, "invalid_request")
+        except ApiError as e:
+            if e.code in ("forbidden", "channel_exists", "recipient_not_member", "session_archived", "invalid_request"):
+                return _channel_back(s, e.code)
+            raise
+        return _channel_back(s)
+
+    @app.post("/s/{s}/channels/{name}/mode", include_in_schema=False)
+    async def channel_mode_form(s: str, name: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                                database: db.Database = Depends(get_db)):
+        from . import api_channels
+        form = await form_data(request)
+        check_post(request, form, viewer)
+        key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+        try:
+            api_channels.set_mode(s, name, api_channels.ModeIn(mode=form.get("mode", "")), key, sess["recovery_id"], None,
+                                  viewer.p, database)
+        except ValidationError:
+            return _channel_back(s, "invalid_request")
+        except ApiError as e:
+            if e.code in ("not_a_channel_member", "not_found", "session_archived"):
+                return _channel_back(s, e.code)
+            raise
+        return _channel_back(s)
+
     @app.get("/attention-count", include_in_schema=False)
     def attention_count(viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
         """For browser notifications: only a number, never participant text."""
         from . import api_board
+        from . import quiet
         with database.read() as c:
-            n = len(api_board.attention(c, viewer.p)["items"])
-        return _security_headers(JSONResponse({"count": n}))
+            items = api_board.attention(c, viewer.p)["items"]
+            # B56: items from sessions where this human is in quiet hours still count, but do not notify
+            hushed = set()
+            for m in c.execute("SELECT s.handle, m.* FROM member m JOIN session s ON s.id=m.session_id "
+                               "WHERE m.principal_id=? AND m.left_at IS NULL AND m.quiet_start IS NOT NULL", (viewer.p.id,)):
+                q = quiet.of_member(m)
+                if q and q["active"]:
+                    hushed.add(m["handle"])
+        notify = sum(1 for i in items if i["session"] not in hushed)
+        return _security_headers(JSONResponse({"count": len(items), "notify": notify}))
 
     @app.get("/s/{s}/board", include_in_schema=False)
     def board_page(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
@@ -1204,7 +1390,12 @@ def mount(app: FastAPI) -> None:
             b = board_for_display(api_board.board(c, sess), _run_status(c, sess),
                                   latest_task_note_bodies(c, sess["id"]), task_counts(c, sess["id"]))
             agents = agent_rows_for_display(api_status.agent_status(c, sess))
-        return page("board.html", viewer=viewer, sess=sess, me=me, board=b, agents=agents)
+            from . import api_blockers
+            blockers = api_blockers.blockers(c, sess)
+            for i in blockers["blockers"]:                      # participant text: R2/R3 before HTML
+                i["title_line"] = render.inline(i["title"], 120) if i.get("title") else None
+                i["text_line"] = render.inline(i["text"], 120) if i.get("text") else None
+        return page("board.html", viewer=viewer, sess=sess, me=me, board=b, agents=agents, blockers=blockers)
 
     @app.get("/s/{s}/board/cards", include_in_schema=False)
     def board_cards(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
@@ -1271,6 +1462,72 @@ def mount(app: FastAPI) -> None:
                                  headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
                                           "X-Glassboard-Content-Type": original_type,
                                           "X-Content-Type-Options": "nosniff"}))
+
+    @app.get("/s/{s}/t/{n}/replay", include_in_schema=False)
+    def task_replay(s: str, n: int, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
+        """E44: the task's recorded events as a sequence between members, with step controls."""
+        from . import replay
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            t = c.execute("SELECT num, title FROM task WHERE session_id=? AND num=?", (sess["id"], n)).fetchone()
+            if t is None:
+                raise ApiError(404, "not_found", "No such task.")
+            r = replay.replay(c, sess["id"], n)
+        return page("replay.html", viewer=viewer, sess=sess, me=me, t={"task": t["num"]}, r=r,
+                    title_line=render.inline(t["title"], render.INLINE_LIMITS["title"]))
+
+    @app.get("/s/{s}/now", include_in_schema=False)
+    def now_page(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
+        """E42: the session at a glance: task counts, what needs you ranked with its action, and agents."""
+        from . import api_status, nowview
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            todo = nowview.items(c, sess, viewer.p)
+            counts = {r[0]: r[1] for r in c.execute("SELECT status, count(*) FROM task WHERE session_id=? GROUP BY status",
+                                                     (sess["id"],))}
+            agents = agent_rows_for_display(api_status.agent_status(c, sess))
+            unread_rows, _ = inbox.inbox_page(c, sess, me, me["cursor_seq"], 1000)
+        order = ("open", "in_progress", "blocked", "review", "done", "cancelled")
+        return page("now.html", viewer=viewer, sess=sess, me=me, todo=todo, agents=agents, unread=len(unread_rows),
+                    counts=[(k, counts.get(k, 0)) for k in order], total=sum(counts.values()),
+                    title_line=render.inline(sess["title"]),
+                    can_coordinate=viewer.p.kind == "human" and me["role"] == "coordinator")
+
+    @app.get("/s/{s}/jump.json", include_in_schema=False)
+    def jump_list(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
+        """E42: what the jump box (Ctrl/Cmd+K) can open in this session: views, tasks, members. Labels pass
+        R2/R3 first; the browser inserts them as text, never as HTML."""
+        with database.read() as c:
+            sess, _ = sessions.require_member(c, s, viewer.p)
+            tasks = c.execute("SELECT num, title, status FROM task WHERE session_id=? ORDER BY num DESC LIMIT 300",
+                              (sess["id"],)).fetchall()
+            members = [r[0] for r in c.execute("SELECT p.handle FROM member m JOIN principal p ON p.id=m.principal_id "
+                                                "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
+        sh = sess["handle"]
+        views = [("Now", "/now"), ("Timeline", ""), ("Conversations", "/conversations"), ("Board", "/board"),
+                 ("Progress", "/progress"), ("Artifacts", "/artifacts")]
+        out = [{"kind": "view", "label": label, "href": f"/s/{sh}{path}"} for label, path in views]
+        out += [{"kind": "task", "label": f"T{t['num']} {render.r2(t['title'])[:120]} ({t['status'].replace('_', ' ')})",
+                 "href": f"/s/{sh}/t/{t['num']}"} for t in tasks]
+        out += [{"kind": "member", "label": f"@{h}", "href": f"/s/{sh}/agent?as={h}"} for h in members]
+        out += [{"kind": "member", "label": f"@{h} activity", "href": f"/s/{sh}?f=all&actor={h}&density=compact"}
+                for h in members]
+        return _security_headers(JSONResponse({"items": out}))
+
+    @app.get("/s/{s}/search", include_in_schema=False)
+    def search_page(s: str, request: Request, viewer: Viewer = Depends(current_viewer),
+                    database: db.Database = Depends(get_db)):
+        """B45: the same search as GET /api/v1/sessions/{s}/search, as a page."""
+        from . import api_search
+        q = (request.query_params.get("q") or "")[:200]
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            r = api_search.search(c, sess, q, 50) if q.strip() else None
+        tasks = [{**t, "title_line": render.inline(t["title"], 140)} for t in (r or {}).get("tasks", [])]
+        return page("search.html", viewer=viewer, sess=sess, me=me, search_q=q if render.r2(q) == q else "",
+                    tasks=tasks, events=[event_card(v) for v in (r or {}).get("events", [])],
+                    more=(r or {}).get("more"), searched=r is not None,
+                    can_coordinate=viewer.p.kind == "human" and me["role"] == "coordinator")
 
     @app.get("/s/{s}/progress", include_in_schema=False)
     def progress_page(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
@@ -1339,8 +1596,12 @@ def mount(app: FastAPI) -> None:
                     counts=counts, overall=overall, contributors=contributors, events=events)
 
     def _timeline(c, sess, me, viewer: Viewer, flt: str, task: int | None, before: int | None,
-                  order: str) -> list[dict]:
+                  order: str, actor: str | None = None, channel: str | None = None) -> list[dict]:
         where, args = ["e.session_id = :s"], {"s": sess["id"]}
+        if actor:                                           # E42: one member's events
+            where.append("e.actor_id = (SELECT id FROM principal WHERE handle = :actor)"); args["actor"] = actor
+        if channel:                                         # B55: one channel's events
+            where.append("e.channel = :channel"); args["channel"] = channel
         where.append("e.type = 'message.preflight'" if flt == "trace" else "e.type != 'message.preflight'")
         if before:
             where.append("e.seq < :before"); args["before"] = before
@@ -1420,6 +1681,14 @@ def mount(app: FastAPI) -> None:
         before = int(before) if before and before.isdigit() else None
         order = request.query_params.get("order", "oldest")
         order = order if order in ("oldest", "newest") else "oldest"
+        density = "compact" if request.query_params.get("density") == "compact" else None
+        actor = request.query_params.get("actor") or None
+        if actor is not None and not sessions.PRINCIPAL_HANDLE_RE.match(actor):
+            actor = None
+        from .api_channels import NAME_RE as _CH
+        channel = request.query_params.get("channel") or None
+        if channel is not None and not _CH.match(channel):
+            channel = None
         with database.read() as c:
             sess, me = sessions.require_member(c, s, viewer.p)
             unread_rows, _ = inbox.inbox_page(c, sess, me, me["cursor_seq"], 1000)
@@ -1431,7 +1700,11 @@ def mount(app: FastAPI) -> None:
                                 "AND i.used_at IS NULL AND i.expires_at>=?) pending_invite FROM member m "
                                 "JOIN principal p ON p.id = m.principal_id WHERE m.session_id=? AND m.left_at IS NULL "
                                 "ORDER BY p.handle", (db.utcnow(), sess["id"])).fetchall()
-            timeline = _timeline(c, sess, me, viewer, flt, task, before, order)
+            timeline = _timeline(c, sess, me, viewer, flt, task, before, order, actor, channel)
+            from . import api_channels
+            channels = api_channels.list_view(c, sess, viewer.p.id)["channels"]
+            for ch in channels:
+                ch["topic_line"] = render.inline(ch["topic"], 120) if ch["topic"] else None
             board = _board(c, sess)
             # Wake supervisor state per member (E30, E31). The hold reason is client text: quoted, inline.
             presence = request.app.state.wake_presence
@@ -1462,8 +1735,16 @@ def mount(app: FastAPI) -> None:
             own_agents = [r[0].split("/", 1)[1] for r in c.execute(
                 "SELECT handle FROM principal WHERE owner_id=? AND kind='agent' AND active=1 ORDER BY handle", (viewer.p.id,))]
             role_names = [r[0] for r in c.execute("SELECT name FROM role_template ORDER BY name")]
-        query = {k: v for k, v in (("f", flt), ("t", task), ("before", before), ("order", order)) if v is not None}
-        return {"sess": sess, "me": me, "flt": flt, "task": task, "order": order,
+        query = {k: v for k, v in (("f", flt), ("t", task), ("before", before), ("order", order), ("actor", actor),
+                                   ("channel", channel), ("density", density)) if v is not None}
+        base = {k: v for k, v in query.items() if k not in ("density", "before")}
+        return {"sess": sess, "me": me, "flt": flt, "task": task, "order": order, "actor": actor, "density": density,
+                "channel": channel, "channels": channels,
+                "all_channels_query": urllib.parse.urlencode({k: v for k, v in query.items() if k not in ("channel", "before")}),
+                "can_manage_channels": me["role"] == "coordinator" or (viewer.p.kind == "human" and me["role"] == "member"),
+                "compact_query": urllib.parse.urlencode({**base, "density": "compact"}),
+                "cards_query": urllib.parse.urlencode(base),
+                "all_actors_query": urllib.parse.urlencode({k: v for k, v in query.items() if k not in ("actor", "before")}),
                 "experiment_strip": experiment_strip,
                 "oldest_query": urllib.parse.urlencode({**query, "order": "oldest"}),
                 "newest_query": urllib.parse.urlencode({**query, "order": "newest"}),
@@ -1784,10 +2065,31 @@ def mount(app: FastAPI) -> None:
                 if row is not None:
                     from .textviews import checkpoint_lines
                     checkpoint = lines_view(checkpoint_lines(api_checkpoints.checkpoint_view(row, target["handle"])))
+            brief_lines = None
+            if may_read:                                      # B40: same rule as GET /brief
+                from . import api_brief
+                b = api_brief.brief(c, sess, target, target["handle"], None, target["principal_id"] == viewer.p.id)
+                brief_lines = lines_view(api_brief.brief_text(b).rstrip("\n").split("\n"))
+            # B41: a human coordinator or the agent's owner may ask it to stand down, and lift that.
+            standdown, may_direct = None, False
+            agent = c.execute("SELECT kind, owner_id FROM principal WHERE id=?", (target["principal_id"],)).fetchone()
+            if agent["kind"] == "agent":
+                from . import api_holds
+                may_direct = viewer.p.kind == "human" and ((me is not None and me["role"] == "coordinator")
+                                                           or agent["owner_id"] == viewer.p.id)
+                standdown = api_holds.standdown_view(c, sess["id"], target["principal_id"])
+                if standdown is not None:
+                    standdown["reason_line"] = render.inline(standdown["reason"] or "", 200)
+            # B56: quiet hours, set by the human themselves or, for an agent, its owner or a human coordinator
+            from . import quiet as quiet_mod
+            quiet = quiet_mod.of_member(target)
+            may_quiet = viewer.p.kind == "human" and (target["principal_id"] == viewer.p.id or may_direct)
         text_lines = sync_text(result, target["consumer_runtime"]).split("\n")
-        return page("agent.html", viewer=viewer, sess=sess, who=target["handle"], members=members,
+        return page("agent.html", quiet=quiet, may_quiet=may_quiet, quiet_start=target["quiet_start"],
+                    quiet_end=target["quiet_end"], quiet_tz=target["quiet_tz"], viewer=viewer, sess=sess, who=target["handle"], members=members,
                     lines=lines_view(text_lines), checkpoint=checkpoint, checkpoint_count=checkpoint_count,
-                    may_read_checkpoint=may_read)
+                    may_read_checkpoint=may_read, brief=brief_lines, standdown=standdown, may_direct=may_direct,
+                    is_agent=agent["kind"] == "agent", op=ids.new_ulid())
 
     # --- tasks ---------------------------------------------------------------------------
 
@@ -1988,13 +2290,14 @@ def mount(app: FastAPI) -> None:
     def task_page(s: str, n: int, request: Request, viewer: Viewer = Depends(current_viewer),
                   database: db.Database = Depends(get_db)):
         from . import api_artifacts
-        from .api_tasks import task_view, task_trail
+        from .api_tasks import task_view, task_trail, verification_view
         with database.read() as c:
             sess, me = sessions.require_member(c, s, viewer.p)
             t = c.execute("SELECT * FROM task WHERE session_id=? AND num=?", (sess["id"], n)).fetchone()
             if t is None:
                 raise ApiError(404, "not_found", "No such task.")
             view = task_view(c, t, sess)
+            view["verification"] = verification_view(c, sess["id"], t, view)
             history_views = inbox.views(c, c.execute("SELECT * FROM event WHERE session_id=? AND task_num=? ORDER BY seq",
                                                       (sess["id"], n)))
             history = [{"seq": v["seq"], "type": v["type"], "lines": lines_view(view_lines(v))} for v in history_views]
@@ -2228,7 +2531,8 @@ def mount(app: FastAPI) -> None:
         try:
             body = MessageIn(kind=form.get("kind", ""), body=form.get("body", ""), to=to,
                              re=int(form["re"]) if form.get("re", "").isdigit() else None,
-                             preflight_seq=int(form["preflight_seq"]) if form.get("preflight_seq", "").isdigit() else None)
+                             preflight_seq=int(form["preflight_seq"]) if form.get("preflight_seq", "").isdigit() else None,
+                             channel=form.get("channel") or None)
         except ValidationError:
             separator = "&" if "?" in destination else "?"
             return _security_headers(RedirectResponse(f"{destination}{separator}err=invalid", status_code=303))
@@ -2242,7 +2546,7 @@ def mount(app: FastAPI) -> None:
                 return page("error.html", status=409, viewer=viewer, code=e.code, sess_handle=s,
                             message="The board was restored since this page was loaded. Reload it and post again.")
             if e.code in ("recipient_not_member", "forbidden", "not_found", "invalid_request", "invalid_preflight", "rate_limited",
-                          "payload_too_large", "idempotency_key_reused"):
+                          "payload_too_large", "idempotency_key_reused", "channel_archived", "recipient_not_in_channel"):
                 separator = "&" if "?" in destination else "?"
                 return _security_headers(RedirectResponse(f"{destination}{separator}err={e.code}", status_code=303))
             raise
@@ -2257,6 +2561,8 @@ def mount(app: FastAPI) -> None:
         check_post(request, form, viewer)
         draft = {"kind": form.get("kind", ""), "body": form.get("body", ""),
                  "to": [h.strip() for h in form.get("to", "").split(",") if h.strip()]}
+        if form.get("channel"):
+            draft["channel"] = form["channel"]
         if form.get("re"):
             draft["re"] = int(form["re"]) if form["re"].isdigit() else form["re"]
         raw = json.dumps(draft, ensure_ascii=True, separators=(",", ":")).encode("ascii")

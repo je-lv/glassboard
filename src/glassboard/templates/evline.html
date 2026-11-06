@@ -22,3 +22,15 @@
 {{ caller() if caller else "" }}
 </div>
 {% endmacro %}
+
+
+{# E42: one event as a compact row for scanning: time, who, kind, task, first line. #}
+{% macro evrow(ev, s) %}
+<div class="ev-row" id="e{{ ev.seq }}" data-event="{{ ev.type }}">
+  <span class="ev-time" title="#{{ ev.seq }} · {{ ev.head.ts if ev.head else '' }}">{{ ev.head.ts[11:19] if ev.head else "" }}</span>
+  <a class="actor-badge actor-{{ ev.actor_style }}" href="/s/{{ s }}?f=all&amp;actor={{ ev.actor }}&amp;density=compact" title="Only @{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></a>
+  <span class="ev-kind">{{ ev.head.kind if ev.head else ev.type }}</span>
+  {% if ev.head and ev.head.task %}<a class="ev-task" href="/s/{{ s }}/t/{{ ev.head.task }}">T{{ ev.head.task }}</a>{% endif %}
+  <span class="ev-sum">{{ ev.summary }}</span>
+</div>
+{% endmacro %}

@@ -42,6 +42,14 @@
     });
   }
 
+  // E42: say when the page last heard from the board (a quiet poll that found nothing new counts too).
+  function markLive() {
+    var live = document.querySelector("[data-live]");
+    if (!live) { return; }
+    live.hidden = false;
+    live.textContent = "live · " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
   function announce(message) {
     status.textContent = "";
     window.setTimeout(function () { status.textContent = message; }, 0);
@@ -86,6 +94,7 @@
       }
       return response.text();
     }).then(function (html) {
+      markLive();
       if (serial !== state.serial || (options.quiet && html === box._lastServerHtml)) { return false; }
       var nodes = safeFragment(html);
       if (!nodes) { throw new Error("unsafe fragment response"); }
@@ -124,7 +133,7 @@
     var publicBase = new URL(box.dataset.public, window.location.href);
     if (target.origin !== window.location.origin || target.pathname !== publicBase.pathname) { return null; }
     var allowed = new URLSearchParams();
-    ["f", "t", "before", "order"].forEach(function (name) {
+    ["f", "t", "before", "order", "actor", "density"].forEach(function (name) {
       if (target.searchParams.has(name)) { allowed.set(name, target.searchParams.get(name)); }
     });
     var fragment = new URL(box.dataset.fragment, window.location.href);

@@ -165,6 +165,7 @@ def api_routes(app_or_routes):
 VALID_BODIES = {
     ("POST", "/api/v1/sessions/{s}/wake/arm"): {"adapter": "claude"},
     ("POST", "/api/v1/sessions/{s}/runtime/exited"): {"exit_code": 0},
+    ("POST", "/api/v1/sessions/{s}/context/compacted"): {"trigger": "auto"},
     ("POST", "/api/v1/sessions/{s}/wake/inspected"): {"generation": 0},
     ("POST", "/api/v1/sessions/{s}/wake/dispatch"): {"fence": "W1-aaaaaaaaaa", "generation": 1},
     ("POST", "/api/v1/sessions/{s}/wake/pause"): {"fence": "W1-aaaaaaaaaa", "reason": "r"},
@@ -202,6 +203,16 @@ VALID_BODIES = {
     ("POST", "/api/v1/sessions/{s}/tasks/{t}/reopen"): {"if_version": 1},
     ("POST", "/api/v1/sessions/{s}/checkpoints"): {"summary": "s", "next_action": "n"},
     ("POST", "/api/v1/sessions/{s}/state"): {"state": "paused", "reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/tasks/{t}/decline"): {"reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/holds"): {"body": "wait", "default": "I continue", "deadline_min": 5},
+    ("POST", "/api/v1/sessions/{s}/holds/{seq}"): {"decision": "proceed"},
+    ("POST", "/api/v1/sessions/{s}/standdowns"): {"member": "jose/claude", "reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/standdowns/{seq}/done"): {},
+    ("POST", "/api/v1/sessions/{s}/standdowns/{seq}/lift"): {},
+    ("POST", "/api/v1/sessions/{s}/quiet-hours"): {"member": "jose/claude", "start": "22:00", "end": "07:00", "tz": "UTC"},
+    ("POST", "/api/v1/sessions/{s}/channels"): {"name": "design", "topic": "t"},
+    ("POST", "/api/v1/sessions/{s}/channels/{name}"): {"topic": "new topic"},
+    ("POST", "/api/v1/sessions/{s}/channels/{name}/mode"): {"mode": "mute"},
 }
 
 
@@ -221,7 +232,7 @@ def session_routes(app, methods=("GET", "POST", "PATCH", "DELETE", "PUT")):
 
 def fill_path(path, s="s1", **params):
     url = path.replace("{s}", s)
-    for name, val in {"handle:path": "ana", "handle": "ana", "t": "1", "seq": "1", "id": "x", **params}.items():
+    for name, val in {"handle:path": "ana", "handle": "ana", "t": "1", "seq": "1", "id": "x", "name": "walk", **params}.items():
         url = url.replace("{" + name + "}", val)
     return url
 
@@ -240,6 +251,23 @@ def prepare_path(gb, method, path) -> dict:
                    rec=gb.rec())
         assert r.status_code == 201, r.text
         return {"seq": str(r.json()["seq"])}
+    if "/channels/{name}" in path:
+        r = gb.req("POST", "/api/v1/sessions/s1/channels", "jose", json={"name": "walk", "members": ["jose/claude"]},
+                   rec=gb.rec())
+        assert r.status_code in (201, 409), r.text
+        return {"name": "walk"}
+    if path.endswith("/holds/{seq}"):
+        r = gb.req("POST", "/api/v1/sessions/s1/holds", "jose/claude",
+                   json={"body": "wait", "default": "I continue", "deadline_min": 5}, rec=gb.rec())
+        assert r.status_code == 201, r.text
+        return {"seq": str(r.json()["seq"])}
+    if "/standdowns/{seq}" in path:
+        r = gb.req("POST", "/api/v1/sessions/s1/standdowns", "jose", json={"member": "jose/claude", "reason": "r"},
+                   rec=gb.rec())
+        if r.status_code == 201:
+            return {"seq": str(r.json()["seq"])}
+        evs = gb.req("GET", "/api/v1/sessions/s1/events?type=standdown.requested&limit=100", "jose").json()["events"]
+        return {"seq": str(evs[-1]["seq"])}
     if path.endswith("/approvals/{seq}"):
         r = gb.req("POST", "/api/v1/sessions/s1/messages", "ana", json={"kind": "approval", "body": "may I?", "to": ["jose"]},
                    rec=gb.rec())

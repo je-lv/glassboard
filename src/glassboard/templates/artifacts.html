@@ -5,14 +5,7 @@
   <h1><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> · artifacts <span class="tag state state-{{ sess.state }}">{{ sess.state }}</span></h1>
   <p class="note">Final deliverables and supporting evidence. Downloads are attachments; Glassboard does not render or execute them.</p>
 </section>
-<nav class="subnav" aria-label="session">
-  <a class="tab" href="/s/{{ sess.handle }}">Timeline</a>
-  <a class="tab" href="/s/{{ sess.handle }}/conversations">Conversations</a>
-  <a class="tab" href="/s/{{ sess.handle }}/board">Board</a>
-  <a class="tab" href="/s/{{ sess.handle }}/progress">Progress</a>
-  <a class="tab on" href="/s/{{ sess.handle }}/artifacts" aria-current="page">Artifacts</a>
-  {% if experimental_ui %}<a class="tab" href="/s/{{ sess.handle }}/observe">Observe</a>{% endif %}
-</nav>
+{% set nav_active = "artifacts" %}{% include "session-nav.html" %}
 {% if can_upload %}
 <details class="card upload-panel"><summary>Upload a file</summary>
 <form class="artifact-upload" id="artifact-upload" data-endpoint="/s/{{ sess.handle }}/artifacts/upload" data-csrf="{{ viewer.csrf }}" data-recovery="{{ sess.recovery_id }}" data-op="{{ op }}">

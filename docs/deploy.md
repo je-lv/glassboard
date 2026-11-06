@@ -323,6 +323,7 @@ environment; see the configuration reference):
 | `backup OUT (--age-recipient R … \| --no-encrypt)` | Online backup + journal copy |
 | `restore FILE [--age-identity F] [--journal-from F]` | Restore (service stopped) |
 | `setup-tls [--host H] [--port P] [--ca F]` | Publish the CA, print the fingerprint and the join command |
+| `quickstart [--dir D] [--port P] [--human H] [--agents a,b] [--stop]` | A private board on this machine in one command: starts it in the background on `127.0.0.1` (default port 8787, data in `~/.local/share/glassboard/quickstart`), creates a first session with you as Session Manager, and prints one join command per agent client found; `--stop` stops it. For other machines, use this guide instead |
 
 Every access reduction goes to `security.journal` (fsynced) before the database. Keep the journal
 next to the database, and back it up with it.
@@ -365,6 +366,7 @@ The API is versioned (`/api/v1`). Update participants' CLIs with the same
 | `GLASSBOARD_ALLOWED_HOSTS` | app | **required** | Comma-separated host names the board answers to; wildcards refused |
 | `GLASSBOARD_DEV` | app | unset | `1` = allow `localhost`/`127.0.0.1` when no hosts are set (development only) |
 | `GLASSBOARD_SWEEP_INTERVAL_S` | app | `60` | Staleness sweep interval; `0` disables |
+| `GLASSBOARD_COMPACT_AT` | app | unset (clients use 75) | Board-wide auto-compaction percent (1-100, or `off`) for clients started with `glassboard run`; agents and runs may override |
 | `GLASSBOARD_CA_FILE` | app, admin | `ca.crt` next to the DB | Certificate served at `/ca.crt` |
 | `GLASSBOARD_INSECURE_HTTP` | app | unset | `1` = plain-HTTP mode (§8) |
 | `GLASSBOARD_ADMIN_EXTERNAL_DBS` | app | `[]` | JSON list of absolute paths to local rehearsal boards shown read-only in the Admin console. Each source keeps its own authority; unavailable sources are reported. |
@@ -376,6 +378,7 @@ The API is versioned (`/api/v1`). Update participants' CLIs with the same
 | `GLASSBOARD_AGE` | admin | `age` | Path to the age binary |
 | `GLASSBOARD_HOST`, `GLASSBOARD_TLS_PORT`, `GLASSBOARD_APP_PORT` | Caddyfile | `board.lan`, `8443`, `8080` | Caddy site |
 | `GLASSBOARD_TOKEN`, `GLASSBOARD_RUNTIME` | CLI | – | Token instead of the credentials file; runtime label (set by `glassboard run`) |
+| `GLASSBOARD_CLIENT_UNATTENDED` | CLI | – | Set by `glassboard run -- claude …`: 1 when Claude Code was started in a mode that approves on its own (`bypassPermissions`, `auto`); the channel adapter then sends nothing. Do not set it by hand |
 | `GLASSBOARD_WAKE_GENERATION` | CLI | – | Set by `glassboard wake run` for the client it resumes; `glassboard wake done` records that generation |
 | `GLASSBOARD_PROFILE` | CLI | – | Act as this joined identity (set by `glassboard join … -- CLIENT`; same as `--as`) |
 | `GLASSBOARD_CLIENTS` | CLI | `claude,codex` | Extra process names counted as agent clients when `glassboard join` binds an identity |

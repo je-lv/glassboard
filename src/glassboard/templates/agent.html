@@ -8,6 +8,41 @@
   <select name="as">{% for m in members %}<option value="{{ m }}"{% if m == who %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>
   <button type="submit" class="secondary">show</button> <a href="/s/{{ sess.handle }}">back to timeline</a>
 </form>
+{% if is_agent %}<section class="card standdown-card"><h2>Stand-down</h2>
+{% if standdown %}<p>Requested at #{{ standdown.seq }} by @{{ standdown.by }}{% if standdown.done_seq %}; {{ who }} answered at #{{ standdown.done_seq }} after releasing its work.{% else %}; {{ who }} has not answered yet. It must release its claims and leases and save a checkpoint first.{% endif %}</p>
+{% if standdown.reason_line %}<p class="muted">Reason: {{ standdown.reason_line }}</p>{% endif %}
+<p class="muted">Until it is lifted, {{ who }} cannot claim tasks or take leases. Other agents keep working.</p>
+{% if may_direct %}<form method="post" action="/s/{{ sess.handle }}/standdowns/{{ standdown.seq }}/lift" class="inline">
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-l">
+  <input type="hidden" name="member" value="{{ who }}">
+  <input name="note" maxlength="2000" placeholder="Note (optional)" aria-label="Note for lifting the stand-down">
+  <button type="submit">Lift stand-down</button></form>{% endif %}
+{% elif may_direct %}<p class="muted">Ask {{ who }} to stop and hand off: it releases every claim and lease, saves a checkpoint and answers. It cannot claim new work until you lift the stand-down. To stop everyone, pause the session instead.</p>
+<form method="post" action="/s/{{ sess.handle }}/standdowns">
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-s">
+  <input type="hidden" name="member" value="{{ who }}">
+  <label for="sdr">Reason</label><input id="sdr" name="reason" maxlength="2000" required>
+  <button type="submit" class="danger" data-confirm="Ask {{ who }} to stand down?" data-confirm-yes="Ask to stand down" data-confirm-no="Cancel">Ask to stand down</button></form>
+{% else %}<p class="muted">No stand-down. Only a Session Manager or this agent's owner can ask it to stand down.</p>{% endif %}
+</section>{% endif %}
+{% if may_quiet or quiet %}<section class="card quiet-card"><h2>Quiet hours</h2>
+{% if quiet %}<p>{{ quiet.window }} · {% if quiet.active %}quiet now, until {{ quiet.until[:16]|replace("T", " ") }} UTC{% else %}next from {{ quiet.until[:16]|replace("T", " ") }} UTC{% endif %}{% if quiet.urgent %} · wakes a human caused still go through{% endif %}</p>{% endif %}
+<p class="muted">{% if is_agent %}During the window the board wakes {{ who }} for nothing; pending work waits and goes out once when it ends.{% else %}During the window the dashboard sends you no browser notifications.{% endif %} Nothing is hidden or dropped.</p>
+{% if may_quiet %}<form method="post" action="/s/{{ sess.handle }}/quiet-hours" class="inline">
+  <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-q">
+  <input type="hidden" name="member" value="{{ who }}">
+  <label for="qf">From</label><input id="qf" name="start" type="time" value="{{ quiet_start or '22:00' }}" required>
+  <label for="qt">To</label><input id="qt" name="end" type="time" value="{{ quiet_end or '07:00' }}" required>
+  <label for="qz">Time zone</label><input id="qz" name="tz" value="{{ quiet_tz or 'UTC' }}" maxlength="64" required>
+  {% if is_agent %}<label><input type="checkbox" name="urgent" value="1"{% if quiet and quiet.urgent %} checked{% endif %}> let wakes a human caused through</label>{% endif %}
+  <button type="submit" name="action" value="set">Set quiet hours</button>{% if quiet %} <button type="submit" name="action" value="clear" formnovalidate class="secondary">Clear</button>{% endif %}
+</form>{% endif %}
+</section>{% endif %}
+<section class="card brief-card"><h2>Resume brief</h2>
+{% if not may_read_checkpoint %}<p class="muted">Only Session Managers read other members' briefs.</p>
+{% else %}<p class="muted">What {{ who }} is given after its client compacts, resumes or clears its context (opt-in hooks), and what <code>glassboard brief</code> prints. Live board state comes first.</p>
+<details><summary>Show the brief</summary><div class="timeline agent">{% for ln in brief %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}</div></details>{% endif %}
+</section>
 <section class="card checkpoint-card"><h2>Latest checkpoint{% if checkpoint_count %} <span class="muted">· {{ checkpoint_count }} saved</span>{% endif %}</h2>
 {% if not may_read_checkpoint %}<p class="muted">Only Session Managers read other members' checkpoints.</p>
 {% elif checkpoint %}<div class="timeline agent">{% for ln in checkpoint %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}</div>

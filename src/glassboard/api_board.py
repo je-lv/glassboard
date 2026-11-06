@@ -122,10 +122,13 @@ def attention(c, p: tokens.Principal) -> dict:
                               "age_s": _age_s(t["updated_at"])})
         owed, _ = inbox.owed(c, sid, p.id, show=50)
         for o in owed:
-            item = {"kind": "approval" if o["type"] == "approval" else "owed", "session": sh, "seq": o["seq"],
-                    "from": o["from"], "age_s": o["age_s"]}
-            row = c.execute("SELECT body FROM event WHERE session_id=? AND seq=?", (sid, o["seq"])).fetchone()
+            kind = {"approval": "approval", "hold": "hold", "standdown.requested": "standdown"}.get(o["type"], "owed")
+            item = {"kind": kind, "session": sh, "seq": o["seq"], "from": o["from"], "age_s": o["age_s"]}
+            row = c.execute("SELECT body, data FROM event WHERE session_id=? AND seq=?", (sid, o["seq"])).fetchone()
             item["text"] = (row["body"] or "")[:NOTE_CHARS]               # what is being asked, quoted
+            if kind == "hold":                                            # B41: what happens if nobody decides
+                d = json.loads(row["data"])
+                item.update(default=d["default"][:NOTE_CHARS], deadline_at=d["deadline_at"])
             items.append(item)
         for t in c.execute("SELECT * FROM task WHERE session_id=? AND status='blocked' AND waiting_on IS NOT NULL", (sid,)):
             w = json.loads(t["waiting_on"])
@@ -166,6 +169,13 @@ def attention(c, p: tokens.Principal) -> dict:
                     if h["claims"] or h["inbox_consumer"]:
                         items.append({"kind": "runtime_exited", "session": sh, "seq": r["seq"], "from": r["handle"],
                                       "text": holding_text(h), "age_s": _age_s(r["ts"])})
+        if coord:                                   # B41: a declined task waits for a human to reassign or cancel it
+            from .api_holds import declined_open
+            for r in declined_open(c, sid):
+                h = inbox.handle_map(c, [r["actor_id"]])
+                items.append({"kind": "declined", "session": sh, "task": r["num"], "title": r["title"],
+                              "from": h.get(r["actor_id"]), "text": (r["body"] or "")[:NOTE_CHARS],
+                              "age_s": _age_s(r["ts"])})
         if coord:
             rows = c.execute(
                 "SELECT e.* FROM event e WHERE e.session_id=? AND e.type='proposal' AND NOT EXISTS "
@@ -186,7 +196,8 @@ def attention(c, p: tokens.Principal) -> dict:
 
 
 _ATTN = {"review": "review", "review_requested": "your review", "owed": "owed by you", "approval": "approval request", "waiting_on_you": "waiting on you", "stale": "stale", "unacknowledged": "assignment awaiting acknowledgment",
-         "proposal": "proposal", "loop": "loop flag", "wake_held": "wake held", "runtime_exited": "agent exited holding work"}
+         "proposal": "proposal", "loop": "loop flag", "wake_held": "wake held", "runtime_exited": "agent exited holding work",
+         "hold": "hold", "standdown": "stand-down request", "declined": "declined task"}
 
 
 def attention_text(a: dict) -> str:
@@ -205,6 +216,9 @@ def attention_text(a: dict) -> str:
                                         + ("yes" if i["assignee_synced_since_assignment"] else "no") + " ---"))
         if i.get("text"):
             lines.append(render.inline_line("text", i["text"]))
+        if i["kind"] == "hold":
+            lines.append(render.inline_line("default", i["default"]))
+            lines.append(render.inline_line("deadline_at", i["deadline_at"]))
     return "\n".join(lines) + "\n"
 
 

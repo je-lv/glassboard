@@ -17,11 +17,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import __version__, clistate, ids, livesession, profiles, runtime, textviews, tlsboot
+from . import __version__, clistate, hooks, ids, livesession, profiles, render, runtime, textviews, tlsboot
 from .render import error_lines, inline, r2
 
 EXIT_OK, EXIT_USAGE, EXIT_AUTH, EXIT_CONN, EXIT_HTTP, EXIT_CONFIG = 0, 2, 3, 4, 5, 6
 EXIT_RECOVERY = 7          # the board was restored: stop writing, run `glassboard reconcile`
+LAST_UNREAD: str | None = None   # inbox news from the last write (Glassboard-Inbox-Unread)
 
 
 def config_dir() -> str:
@@ -85,7 +86,8 @@ def is_loopback_http(url: str) -> bool:
 
 
 def request(cfg: dict, method: str, path: str, token: str | None = None, body=None, accept_text=False,
-            extra_headers: dict | None = None, raw_body: bytes | None = None, return_bytes: bool = False):
+            extra_headers: dict | None = None, raw_body: bytes | None = None, return_bytes: bool = False,
+            timeout: float = 30):
     global _warned
     base = cfg["url"].rstrip("/")
     parsed = urllib.parse.urlsplit(base)
@@ -114,8 +116,10 @@ def request(cfg: dict, method: str, path: str, token: str | None = None, body=No
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     ctx = ssl_context(cfg.get("ca_file")) if parsed.scheme == "https" else None
     try:
-        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:  # nosec B310 - scheme allowlisted above
+        with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:  # nosec B310 - scheme allowlisted above
             payload = resp.read()
+            global LAST_UNREAD
+            LAST_UNREAD = resp.headers.get("Glassboard-Inbox-Unread")
             if return_bytes:
                 return resp.status, payload
             raw = payload.decode("utf-8", "replace")
@@ -271,7 +275,7 @@ def cmd_join(a) -> int:
     if cmd:                                                  # launch the client as this identity
         print(f"starting {r2(cmd[0])} as @{r2(j['handle'])}…", file=sys.stderr)
         livesession.hold_for_client()                         # a wake supervisor sees this client as open (E31)
-        runtime.run(cmd)
+        runtime.run(_with_compaction(cmd, getattr(a, "compact_at", None)))
         return EXIT_OK
     if a.here:
         print(f"identity file: {profiles.write_pointer(name)} (no secret inside); commands run below this directory use it")
@@ -825,6 +829,8 @@ def _post_message(a) -> dict:
         msg["re"] = a.re
     if a.task:
         msg["task"] = a.task
+    if getattr(a, "channel", None):
+        msg["channel"] = a.channel.lstrip("#")
     if a.ref:
         msg["refs"] = [_parse_ref(x) for x in a.ref]
     if a.draft:
@@ -1006,7 +1012,7 @@ def cmd_watch(a) -> int:
 def cmd_history(a) -> int:
     ctx = open_session(a, allow_reconcile=True)
     q = {"after": a.after, "limit": a.limit}
-    for k in ("before", "task", "thread", "actor", "type"):
+    for k in ("before", "task", "thread", "actor", "type", "channel"):
         if getattr(a, k) is not None:
             q[k] = getattr(a, k)
     if a.to_me:
@@ -1249,6 +1255,13 @@ def cmd_task(a) -> int:
                 body["waiting_on"] = a.waiting_on
             r = send_op(ctx, "POST", f"{tp}/{act}", body, f"task {act} T{num}", fenced=True, task=num,
                         fence_effect="drop" if act in ("submit", "release") else None)
+        elif act == "decline":                               # B41: give the task back with a reason
+            if not text:
+                raise CliError(EXIT_USAGE, "usage", 'usage: glassboard task decline T# "<reason>"')
+            fence = ctx.state.runtime(ctx.label).get("fences", {}).get(str(num))
+            body = {"reason": text, **({"fence": fence} if fence else {})}
+            r = send_op(ctx, "POST", f"{tp}/decline", body, f"task decline T{num}", fenced=bool(fence), task=num,
+                        fence_effect="drop" if fence else None)
         elif act == "release":                               # --as-coordinator: no fence
             r = send_op(ctx, "POST", f"{tp}/release", {"handoff": text} if text else {}, f"task release T{num}")
         elif act in ("accept", "return", "reassign", "cancel", "reopen"):
@@ -1342,6 +1355,187 @@ def _report_exit(label: str, code: int) -> None:
                   file=sys.stderr)
 
 
+def _board_compact_at(cfg) -> str | int | None:
+    """The board's compaction setting from discovery; None when unset or unreachable."""
+    try:
+        _, raw = request(cfg, "GET", "/api/v1/discovery", timeout=5)
+        return (json.loads(raw).get("compaction") or {}).get("at_percent")
+    except Exception:
+        return None
+
+
+def _with_compaction(cmd: list[str], run_flag) -> list[str]:
+    """B40: set the client's auto-compaction threshold (run flag, agent, board, default). B32: also tell the
+    channel adapter whether this client may act unattended (it refuses to push then)."""
+    if hooks.client_of(cmd) is None:
+        return cmd
+    if hooks.client_of(cmd) == "claude":
+        from . import channel
+        os.environ[channel.UNATTENDED_ENV] = "1" if channel.unattended(cmd) else "0"
+    try:
+        cfg = load_config()
+    except (CliError, OSError, ValueError):
+        cfg = {}
+    try:
+        board = _board_compact_at(cfg) if cfg.get("url") and run_flag is None and cfg.get("compact_at") is None else None
+        value, source = hooks.resolve(run_flag, cfg.get("compact_at"), board)
+    except ValueError as e:
+        raise CliError(EXIT_USAGE, "usage", str(e))
+    cmd, note = hooks.apply(cmd, value, os.environ)
+    if note:
+        print(f"glassboard: {note}; set by {source} (`glassboard compaction` to change)", file=sys.stderr)
+    return cmd
+
+
+def cmd_compaction(a) -> int:
+    """B40: this agent's auto-compaction threshold for clients started with `glassboard run`."""
+    cfg = load_config()
+    if a.action == "set":
+        if a.value is None:
+            raise CliError(EXIT_USAGE, "usage", "usage: glassboard compaction set PERCENT|off|unset")
+        if a.value == "unset":
+            cfg.pop("compact_at", None)
+        else:
+            try:
+                v = hooks.parse_compact_at(a.value)
+            except ValueError as e:
+                raise CliError(EXIT_USAGE, "usage", str(e))
+            cfg["compact_at"] = v
+        _, cfg_path, _ = _paths()
+        with open(cfg_path, "w") as f:
+            json.dump(cfg, f, indent=2)
+    board = _board_compact_at(cfg) if cfg.get("url") else None
+    value, source = hooks.resolve(None, cfg.get("compact_at"), board)
+    shown = "off (the client keeps its own threshold)" if value == "off" else f"{value}%"
+    if a.json:
+        _print_json({"compact_at": value, "source": source, "agent": cfg.get("compact_at"), "board": board,
+                     "default": hooks.DEFAULT_COMPACT_AT})
+    else:
+        print(f"compaction: {shown} (from {source}; `glassboard run --compact-at N|off` overrides one run)")
+    return EXIT_OK
+
+
+DELIVER_CHARS = 6000                   # B53: bound on what one hook adds to the agent's context
+UNATTENDED_MODES = ("bypassPermissions", "auto")   # B32 F3: never keep a turn going where nobody approves
+
+
+def _deliverable(ctx) -> tuple[str, int] | None:
+    """B53: new inbox events for this runtime as bounded canonical text, and the seq to acknowledge after
+    printing. None when there is nothing, the runtime holds no inbox consumer (a hook never attaches or
+    takes over), or the agent is in quiet hours (B56: delivery waits like a wake)."""
+    rt = ctx.state.runtime(ctx.label)
+    if not rt.get("consumer"):
+        return None
+    w = _call_quick(ctx, "GET", f"{ctx.path}/wake")
+    q = (w or {}).get("quiet")
+    if q and q.get("active") and q.get("blocks_dispatch", True):
+        return None
+    _, raw = request(ctx.cfg, "POST", f"{ctx.path}/sync", token=ctx.tok, body={"consumer": rt["consumer"], "limit": 50},
+                     extra_headers={"X-Glassboard-Recovery": ctx.info["recovery_id"]}, timeout=8)
+    j = json.loads(raw)
+    rt["delivered_through"] = j["delivered_through"]
+    ctx.state.save_runtime(ctx.label, rt)
+    if not j["inbox"]:
+        return None
+    head = [render.section(f"note: glassboard delivered {{n}} new event(s) in session {j['session']} while you worked "
+                           f"(the same text `glassboard sync` shows). They are acknowledged now; reply on the board "
+                           f"if one needs you."), render.NOTE_LINE]
+    body, last, n = [], None, 0
+    for ev in j["inbox"]:
+        lines = textviews.view_lines(ev)
+        if body and sum(len(x) + 1 for x in head + body + lines) > DELIVER_CHARS - 200:
+            break
+        body.extend(lines)
+        last, n = ev["seq"], n + 1
+    if n < len(j["inbox"]) or j["more"]:
+        body.append(render.section("note: more events are waiting: run `glassboard sync`."))
+    head[0] = head[0].replace("{n}", str(n))
+    text = "\n".join(head + body)
+    return text[:DELIVER_CHARS], last
+
+
+def _call_quick(ctx, method: str, path: str):
+    try:
+        _, raw = request(ctx.cfg, method, path, token=ctx.tok, timeout=5)
+        return json.loads(raw) if raw else None
+    except Exception:                       # noqa: BLE001 - the caller treats "unknown" as "no limit known"
+        return None
+
+
+def _hook_deliver(ctx, a, payload: dict, stop: bool) -> None:
+    """PostToolUse (stop=False): add new events as context. Stop (stop=True, opt-in): keep the turn going
+    once while events wait, never under an unattended permission mode and never twice in a row."""
+    if stop and (payload.get("stop_hook_active") or payload.get("permission_mode") in UNATTENDED_MODES):
+        return
+    with ctx.state.locked():
+        got = _deliverable(ctx)
+        if got is None:
+            return
+        text, last = got
+        if stop:
+            out = {"decision": "block", "reason": text}
+        else:
+            out = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}
+        sys.stdout.write(json.dumps(out, ensure_ascii=True) + "\n")
+        sys.stdout.flush()                  # printed first; acknowledged only after (at-least-once)
+        rt = ctx.state.runtime(ctx.label)
+        request(ctx.cfg, "POST", f"{ctx.path}/sync", token=ctx.tok, body={"consumer": rt["consumer"], "ack_through": last,
+                                                                          "limit": 1},
+                extra_headers={"X-Glassboard-Recovery": ctx.info["recovery_id"]}, timeout=8)
+
+
+def cmd_hook(a) -> int:
+    """B40: called by a client hook. Prints only what the hook protocol expects, and nothing at all
+    (exit 0) when anything fails, so a hook never breaks the client."""
+    try:
+        raw = sys.stdin.read() if not sys.stdin.isatty() else ""
+        payload = json.loads(raw) if raw.strip() else {}
+        if not isinstance(payload, dict):
+            payload = {}
+    except (OSError, ValueError):
+        payload = {}
+    try:
+        ctx = open_session(a)
+        if a.action in ("deliver", "stop"):
+            _hook_deliver(ctx, a, payload, a.action == "stop")
+        elif a.action == "session-start":
+            _, text = request(ctx.cfg, "GET", f"{ctx.path}/brief?format=text", token=ctx.tok, accept_text=True,
+                              timeout=8)
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}},
+                             ensure_ascii=True))
+        else:
+            trigger = payload.get("trigger") if payload.get("trigger") in ("auto", "manual") else "unknown"
+            request(ctx.cfg, "POST", f"{ctx.path}/context/compacted", token=ctx.tok,
+                    body={"trigger": trigger, "client": a.client},
+                    extra_headers={"Idempotency-Key": ids.new_ulid(), "X-Glassboard-Recovery": ctx.info["recovery_id"]},
+                    timeout=8)
+    except Exception:                       # noqa: BLE001 - a hook must never fail the client
+        pass
+    return EXIT_OK
+
+
+def cmd_hooks(a) -> int:
+    """B40: show or install the opt-in client hooks (resume brief after compaction; compaction events)."""
+    targets = list(hooks.CLIENTS) if a.client == "all" else [a.client]
+    if a.action == "show":
+        for t in targets:
+            print(f"# {t}: add to {hooks.settings_path(t, a.project, a.home)}")
+            print(json.dumps({"hooks": hooks.recipe(t, a.deliver, a.hold)}, indent=2))
+        return EXIT_OK
+    for t in targets:
+        try:
+            path, changed, backup = hooks.install(t, a.project, a.home, a.deliver, a.hold)
+        except (ValueError, OSError) as e:
+            raise CliError(EXIT_CONFIG, "hooks_not_installed", f"{t}: {e}")
+        if changed:
+            print(f"installed the glassboard hooks for {t}: {path}" + (f" (previous file kept as {backup})" if backup else ""))
+        else:
+            print(f"the glassboard hooks for {t} are already in {path}")
+        if t == "codex":
+            print("codex: open /hooks in Codex once to review and trust them; Codex skips new hooks until trusted")
+    return EXIT_OK
+
+
 def cmd_export(a) -> int:
     """The whole session: canonical text (md, default) or one JSON event per line (jsonl)."""
     ctx = open_session(a, allow_reconcile=True)
@@ -1385,6 +1579,123 @@ def cmd_approval(a) -> int:
     with ctx.state.locked():
         r = send_op(ctx, "POST", f"{ctx.path}/approvals/{a.seq}", body, f"approval {a.decision} #{a.seq}")
     print(f"approval #{a.seq} {'granted' if a.decision == 'grant' else 'denied'} · #{r['seq']}")
+    return EXIT_OK
+
+
+def _minutes(v: str) -> int:
+    """30, 30m or 2h → minutes."""
+    v = v.strip().lower()
+    mult = 60 if v.endswith("h") else 1
+    v = v.rstrip("hm")
+    if not v.isdigit():
+        raise argparse.ArgumentTypeError("a number of minutes, like 30, 30m or 2h")
+    return int(v) * mult
+
+
+def cmd_hold(a) -> int:
+    """B41: raise an objection that never blocks (the deciders owe an answer before the deadline), or decide one."""
+    ctx = open_session(a)
+    if a.action == "raise":
+        if not a.arg or not a.default or a.deadline is None:
+            raise CliError(EXIT_USAGE, "usage", 'usage: glassboard hold raise "<what should wait, and why>" '
+                                                '--default "<what happens if nobody decides>" --deadline 30m [--task T#]')
+        body = {"body": a.arg, "default": a.default, "deadline_min": a.deadline}
+        if a.task:
+            body["task"] = _task_num(a.task)
+        with ctx.state.locked():
+            r = send_op(ctx, "POST", f"{ctx.path}/holds", body, "hold raise")
+        print(f"hold #{r['seq']} raised · decide by {r2(r['deadline_at'])[:16]}Z, otherwise the stated default applies")
+        return EXIT_OK
+    if not (a.arg or "").lstrip("#").isdigit() or a.decision is None:
+        raise CliError(EXIT_USAGE, "usage", 'usage: glassboard hold decide SEQ uphold|proceed [--note "…"]')
+    seq = int(a.arg.lstrip("#"))
+    body = {"decision": a.decision, **({"note": a.note} if a.note else {})}
+    with ctx.state.locked():
+        r = send_op(ctx, "POST", f"{ctx.path}/holds/{seq}", body, f"hold decide #{seq}")
+    print(f"hold #{seq} {'upheld' if a.decision == 'uphold' else 'overruled: proceed'} · #{r['seq']}")
+    return EXIT_OK
+
+
+def cmd_standdown(a) -> int:
+    """B41: a human asks an agent to stop and hand off; the agent answers; a human lifts it."""
+    ctx = open_session(a)
+    if a.action == "request":
+        if not a.arg or not a.text:
+            raise CliError(EXIT_USAGE, "usage", 'usage: glassboard standdown request AGENT "<reason>"')
+        with ctx.state.locked():
+            r = send_op(ctx, "POST", f"{ctx.path}/standdowns", {"member": a.arg, "reason": a.text}, "standdown request")
+        print(f"stand-down #{r['seq']} requested for @{r2(r['member'])}")
+        return EXIT_OK
+    if a.action == "lift":
+        if not (a.arg or "").lstrip("#").isdigit():
+            raise CliError(EXIT_USAGE, "usage", 'usage: glassboard standdown lift SEQ ["<note>"]')
+        seq = int(a.arg.lstrip("#"))
+        with ctx.state.locked():
+            r = send_op(ctx, "POST", f"{ctx.path}/standdowns/{seq}/lift", {"note": a.text} if a.text else {},
+                        f"standdown lift #{seq}")
+        print(f"stand-down #{seq} lifted · #{r['seq']}")
+        return EXIT_OK
+    # done: release what this runtime holds, then answer. A checkpoint must already be saved.
+    with ctx.state.locked():
+        b = _call(ctx.cfg, ctx.tok, "GET", f"{ctx.path}/brief")
+        sd = b.get("standdown")
+        if not sd:
+            raise CliError(EXIT_USAGE, "no_standdown", "Nobody asked you to stand down in this session.")
+        if sd.get("done_seq"):
+            print(f"stand-down #{sd['seq']} already answered at #{sd['done_seq']}; a human lifts it")
+            return EXIT_OK
+        handoff = a.text or f"Stand-down requested in #{sd['seq']}."
+        fences = ctx.state.runtime(ctx.label).get("fences", {})
+        for x in b.get("claims", []):
+            if x["status"] not in ("in_progress", "blocked"):
+                continue
+            fence = fences.get(str(x["task"]))
+            if not fence:
+                raise CliError(EXIT_USAGE, "no_fence", f"This runtime holds no fence for T{x['task']}.",
+                               {"hint": f'Reclaim it first (glassboard task reclaim T{x["task"]} "<reason>"), then retry.'})
+            send_op(ctx, "POST", f"{ctx.path}/tasks/{x['task']}/release", {"fence": fence, "handoff": handoff},
+                    f"task release T{x['task']}", fenced=True, task=x["task"], fence_effect="drop")
+            print(f"T{x['task']} released")
+        for lease in _call(ctx.cfg, ctx.tok, "GET", f"{ctx.path}/leases").get("leases", []):
+            if lease["holder"] == b["member"]:
+                send_op(ctx, "POST", f"{ctx.path}/leases/release", {"resource": lease["resource"]}, "lease release")
+                print(f"lease {r2(lease['resource'])} released")
+        r = send_op(ctx, "POST", f"{ctx.path}/standdowns/{sd['seq']}/done", {"note": a.text} if a.text else {},
+                    f"standdown done #{sd['seq']}")
+    print(f"stand-down #{sd['seq']} answered · #{r['seq']} · a human lifts it when you may work again")
+    return EXIT_OK
+
+
+def _local_tz() -> str | None:
+    """This machine's IANA time zone name, when it can be told (TZ, then /etc/localtime)."""
+    tz = os.environ.get("TZ", "").lstrip(":")
+    if tz and "/" in tz or tz == "UTC":
+        return tz
+    try:
+        target = os.path.realpath("/etc/localtime")
+    except OSError:
+        return None
+    marker = "/zoneinfo/"
+    return target.split(marker, 1)[1] if marker in target else None
+
+
+def cmd_quiet(a) -> int:
+    """B56: quiet hours. Humans set them for themselves or for an agent they own or coordinate."""
+    if a.action == "show":
+        return _session_view(a, "status")
+    ctx = open_session(a)
+    me = _call(ctx.cfg, ctx.tok, "GET", "/api/v1/whoami")["handle"]
+    body: dict = {"member": a.member or me}
+    if a.action == "set":
+        tz = a.tz or _local_tz()
+        if not (a.start and a.end and tz):
+            raise CliError(EXIT_USAGE, "usage", "usage: glassboard quiet set --from 22:00 --to 07:00 [--tz Europe/Madrid] "
+                                                "[--for AGENT] [--urgent]")
+        body.update(start=a.start, end=a.end, tz=tz, urgent=bool(a.urgent))
+    with ctx.state.locked():
+        r = send_op(ctx, "POST", f"{ctx.path}/quiet-hours", body, "quiet " + a.action)
+    print(f"@{r2(r['member'])} quiet hours: {r2(r['quiet'])}" + (" · human-caused wakes go through" if r["urgent"] else "")
+          + f" · #{r['seq']}")
     return EXIT_OK
 
 
@@ -1518,6 +1829,54 @@ def _me_view(name: str, a) -> int:
     return EXIT_OK
 
 
+def cmd_claude_channel(a) -> int:
+    from . import channel
+    return channel.main(a, sys.modules[__name__])
+
+
+def cmd_topic_channel(a) -> int:
+    """B55: topic channels. list for anyone; create/change/archive for humans and coordinators; mode for members."""
+    if a.action == "list":
+        return _session_view(a, "channels")
+    if not a.name:
+        raise CliError(EXIT_USAGE, "usage", f"usage: glassboard channel {a.action} NAME …")
+    ctx = open_session(a)
+    path = f"{ctx.path}/channels/{_quote(a.name)}"
+    if a.action == "create":
+        body = {"name": a.name, "members": a.member or [], **({"topic": a.topic} if a.topic else {})}
+        if a.post_only:
+            body.update(post_policy="listed", posters=a.poster or [])
+        with ctx.state.locked():
+            r = send_op(ctx, "POST", f"{ctx.path}/channels", body, f"channel create {a.name}")
+        print(f"#{r2(r['channel'])} created with {r['members']} member(s) · #{r['seq']}")
+        return EXIT_OK
+    if a.action == "mode":
+        if len(a.values) != 1 or a.values[0] not in ("follow", "mentions", "mute"):
+            raise CliError(EXIT_USAGE, "usage", "usage: glassboard channel mode NAME follow|mentions|mute")
+        with ctx.state.locked():
+            r = send_op(ctx, "POST", f"{path}/mode", {"mode": a.values[0]}, f"channel mode {a.name}")
+        print(f"#{r2(r['channel'])}: you now {r2(r['mode'])} · #{r['seq']}")
+        return EXIT_OK
+    body: dict = {}
+    if a.action == "topic":
+        if not a.values:
+            raise CliError(EXIT_USAGE, "usage", 'usage: glassboard channel topic NAME "text"')
+        body["topic"] = " ".join(a.values)
+    elif a.action in ("add", "remove"):
+        if not a.values:
+            raise CliError(EXIT_USAGE, "usage", f"usage: glassboard channel {a.action} NAME HANDLE…")
+        body[a.action] = a.values
+    elif a.action == "posters":
+        body.update(post_policy="listed" if a.values else "all", posters=a.values)
+    elif a.action == "archive":
+        body["archive"] = True
+    with ctx.state.locked():
+        r = send_op(ctx, "POST", path, body, f"channel {a.action} {a.name}")
+    what = "archived" if r.get("archived") else ("changed: " + ", ".join(r2(x) for x in r.get("changes", [])))
+    print(f"#{r2(r['channel'])} {what} · #{r['seq']}")
+    return EXIT_OK
+
+
 def cmd_wake(a) -> int:
     from . import wakerun
     return wakerun.main(a, sys.modules[__name__])
@@ -1584,6 +1943,7 @@ def build_parser() -> argparse.ArgumentParser:
     jn.add_argument("--fetch-ca", action="store_true"); jn.add_argument("--ca-fingerprint")
     jn.add_argument("--insecure-http", action="store_true")
     jn.add_argument("--here", action="store_true", help="identify by a pointer file in this directory instead")
+    jn.add_argument("--compact-at", metavar="PERCENT|off", help="with -- CLIENT: its auto-compaction threshold")
     jn.add_argument("command", nargs="*", help="-- CLIENT…: start the agent client as this identity")
     sub.add_parser("protocol", help="print the agent protocol")
     sk = sub.add_parser("skill", help="show or install the agent skill (Claude Code, Codex)")
@@ -1595,7 +1955,20 @@ def build_parser() -> argparse.ArgumentParser:
     dc.add_argument("--json", action="store_true")
     d = sub.add_parser("discovery"); d.add_argument("--json", action="store_true")
     e = sub.add_parser("env-probe"); e.add_argument("--json", action="store_true")
-    r = sub.add_parser("run"); r.add_argument("command", nargs=argparse.REMAINDER)
+    r = sub.add_parser("run")
+    r.add_argument("--compact-at", metavar="PERCENT|off",
+                   help="this run's auto-compaction threshold for claude or codex (default: agent, board, 75)")
+    r.add_argument("command", nargs=argparse.REMAINDER)
+    cm = sub.add_parser("compaction", help="show or set this agent's auto-compaction threshold for `glassboard run`")
+    cm.add_argument("action", choices=["show", "set"]); cm.add_argument("value", nargs="?", help="PERCENT, off or unset")
+    cm.add_argument("--json", action="store_true")
+    hs = sub.add_parser("hooks", help="show or install the opt-in client hooks (resume brief, compaction events)")
+    hs.add_argument("action", choices=["show", "install"])
+    hs.add_argument("--for", dest="client", choices=["claude", "codex", "all"], default="all")
+    hs.add_argument("--project", metavar="DIR", help="install into DIR/.claude or DIR/.codex instead of your home")
+    hs.add_argument("--deliver", action="store_true", help="also deliver new board events into the open session after each tool call")
+    hs.add_argument("--hold", action="store_true", help="with --deliver: keep a finished turn going once while events wait (Stop hook)")
+    hs.add_argument("--home", help=argparse.SUPPRESS)
 
     def sess(p):
         p.add_argument("-s", "--session", help="session handle (default: the one chosen with `use`)")
@@ -1631,7 +2004,7 @@ def build_parser() -> argparse.ArgumentParser:
         po.add_argument("body", nargs="?", help='message text immediately after KIND, or "-" to read stdin (optional for a stand-up update)'); po.add_argument("--to", action="append", help="comma-separated handles (repeatable); omit it or use 'all' to broadcast")
         po.add_argument("--body", dest="body_option", help='message text; unlike the positional form, may appear after other options')
         po.add_argument("--body-file", metavar="PATH", help='read UTF-8 message text from PATH (or "-" for stdin)')
-        po.add_argument("--re", type=int); po.add_argument("--task"); po.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
+        po.add_argument("--re", type=int); po.add_argument("--task"); po.add_argument("--channel", metavar="NAME", help="post in a topic channel"); po.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
         po.add_argument("--done", help="stand-up update: what got done"); po.add_argument("--doing", help="stand-up update: in progress")
         po.add_argument("--blocked", help="stand-up update: what blocks you")
         po.add_argument("--draft", action="append", metavar="TITLE|SCOPE|DELIVERABLE[|ASSIGNEE]", help="proposal: a proposed task (repeat, at most 10)")
@@ -1651,6 +2024,7 @@ def build_parser() -> argparse.ArgumentParser:
     wa.add_argument("--heartbeats", action="store_true", help="also print unchanged timeout packets")
     hi = sess(sub.add_parser("history")); hi.add_argument("--after", type=int, default=0); hi.add_argument("--before", type=int)
     hi.add_argument("--task"); hi.add_argument("--thread", type=int); hi.add_argument("--actor"); hi.add_argument("--type")
+    hi.add_argument("--channel", metavar="NAME")
     hi.add_argument("--to-me", action="store_true"); hi.add_argument("--limit", type=int, default=50); hi.add_argument("--json", action="store_true")
     qu = sess(sub.add_parser("question")); qu.add_argument("action", choices=["resolve"]); qu.add_argument("seq", type=int)
     qu.add_argument("resolution", choices=["declined", "obsolete", "answered"]); qu.add_argument("note", nargs="?")
@@ -1664,7 +2038,7 @@ def build_parser() -> argparse.ArgumentParser:
     cp.add_argument("--n"); cp.add_argument("--json", action="store_true")
     tk2 = sess(sub.add_parser("task"))
     tk2.add_argument("action", choices=["list", "next", "show", "trail", "create", "review", "edit", "acknowledge", "claim", "note", "check", "block", "unblock", "submit",
-                                        "release", "reclaim", "accept", "return", "reassign", "cancel", "reopen"])
+                                        "release", "decline", "reclaim", "accept", "return", "reassign", "cancel", "reopen"])
     tk2.add_argument("task", nargs="?", help="T# (for create: the title)")
     tk2.add_argument("text", nargs="?", help="note / reason / summary / handoff / feedback")
     tk2.add_argument("--scope"); tk2.add_argument("--deliverable"); tk2.add_argument("--assignee"); tk2.add_argument("--title")
@@ -1710,8 +2084,45 @@ def build_parser() -> argparse.ArgumentParser:
     iv.add_argument("--json", action="store_true")
     sub.add_parser("reference", help="print the agent reference (every capability: API, CLI, dashboard)")
     su = sess(sub.add_parser("standup", help="each member's latest stand-up update")); su.add_argument("--json", action="store_true")
+    br = sess(sub.add_parser("brief", help="resume brief: live claims, owed, inbox, conflicts, checkpoint, decisions"))
+    br.add_argument("--for", dest="member", help="coordinators: another member's brief"); br.add_argument("--json", action="store_true")
+    ch = sess(sub.add_parser("claude-channel", help="Claude Code channels (research preview): push a fixed notice into an idle open session"))
+    ch.add_argument("action", choices=["install", "serve"])
+    ch.add_argument("--project", metavar="DIR", help="install: the project whose .mcp.json gets the server (default: here)")
+    tc = sess(sub.add_parser("channel", help="topic channels in this session: list, create, change, archive, your mode"))
+    tc.add_argument("action", choices=["list", "create", "topic", "add", "remove", "posters", "archive", "mode"])
+    tc.add_argument("name", nargs="?", help="channel name (lowercase letters, digits, dashes)")
+    tc.add_argument("values", nargs="*", help="topic: the text; add/remove/posters: handles; mode: follow|mentions|mute")
+    tc.add_argument("--topic"); tc.add_argument("--member", action="append", metavar="HANDLE", help="create: a member (repeat)")
+    tc.add_argument("--post-only", action="store_true", help="create: only --poster handles (and you) may post")
+    tc.add_argument("--poster", action="append", metavar="HANDLE"); tc.add_argument("--json", action="store_true")
+    hk = sess(sub.add_parser("hook", help="called by client hooks (see `glassboard hooks`); always exits 0"))
+    hk.add_argument("action", choices=["session-start", "compacted", "deliver", "stop"])
+    hk.add_argument("--client", choices=["claude", "codex", "other"], default="other")
+    se = sess(sub.add_parser("search", help="find messages, titles, summaries and tasks in this session"))
+    se.add_argument("query", nargs="+"); se.add_argument("--limit", type=int); se.add_argument("--json", action="store_true")
+    bl = sess(sub.add_parser("blockers", help="what holds up the most work: root causes of waiting tasks, biggest first"))
+    bl.add_argument("--json", action="store_true")
     st = sess(sub.add_parser("status", help="one row per agent: derived state and why, claims, owed, leases, last event, checkpoint"))
     st.add_argument("--json", action="store_true")
+    ho = sess(sub.add_parser("hold", help="raise an objection with a default and a deadline (never blocks), or decide one"))
+    ho.add_argument("action", choices=["raise", "decide"])
+    ho.add_argument("arg", nargs="?", help="raise: what should wait, and why; decide: the hold's SEQ")
+    ho.add_argument("decision", nargs="?", choices=["uphold", "proceed"], help="decide: uphold the hold or proceed")
+    ho.add_argument("--default", help="raise: what happens if nobody decides in time")
+    ho.add_argument("--deadline", type=_minutes, metavar="MINUTES", help="raise: 5-1440 minutes (30, 30m, 2h)")
+    ho.add_argument("--task", metavar="T#"); ho.add_argument("--note", help="decide: a note for the record")
+    sd = sess(sub.add_parser("standdown", help="humans ask an agent to stop and hand off; the agent answers with done"))
+    sd.add_argument("action", choices=["request", "done", "lift"])
+    sd.add_argument("arg", nargs="?", help="request: the agent's handle; lift: the request SEQ; done: (none)")
+    sd.add_argument("text", nargs="?", help="request: reason; done: handoff note; lift: note")
+    qh = sess(sub.add_parser("quiet", help="quiet hours: no wakes for an agent, no notifications for you, in a daily window"))
+    qh.add_argument("action", choices=["show", "set", "clear"])
+    qh.add_argument("--for", dest="member", metavar="MEMBER", help="set/clear: an agent you own or coordinate (default: you)")
+    qh.add_argument("--from", dest="start", metavar="HH:MM"); qh.add_argument("--to", dest="end", metavar="HH:MM")
+    qh.add_argument("--tz", metavar="ZONE", help="IANA time zone (default: this machine's)")
+    qh.add_argument("--urgent", action="store_true", help="set: let wakes a human caused through (messages, decisions)")
+    qh.add_argument("--json", action="store_true")
     apv = sess(sub.add_parser("approval", help="humans: grant or deny an approval request"))
     apv.add_argument("decision", choices=["grant", "deny"]); apv.add_argument("seq", type=int); apv.add_argument("note", nargs="?")
     le = sess(sub.add_parser("lease", help="advisory claims on a resource (path, document, service)"))
@@ -1786,27 +2197,43 @@ def _main(argv=None) -> int:
             if not cmd:
                 raise CliError(EXIT_USAGE, "usage", "usage: glassboard run -- <command> [args...]")
             livesession.hold_for_client()                     # a wake supervisor sees this client as open (E31)
-            return runtime.run(cmd, on_exit=_report_exit)
+            return runtime.run(_with_compaction(cmd, a.compact_at), on_exit=_report_exit)
         if a.cmd == "session":
             return cmd_session_create(a) if a.action == "create" else cmd_session_state(a)
-        return {"login": cmd_login, "whoami": cmd_whoami, "doctor": cmd_doctor,
+        return _with_inbox_news({"login": cmd_login, "whoami": cmd_whoami, "doctor": cmd_doctor,
                 "discovery": cmd_discovery, "env-probe": cmd_env_probe,
                 "sessions": cmd_sessions, "use": cmd_use, "members": cmd_members, "agent": cmd_agent,
                 "token": cmd_token, "role": cmd_role, "post": cmd_post, "preflight": cmd_preflight,
                 "sync": cmd_sync, "watch": cmd_watch, "wake": cmd_wake, "history": cmd_history, "board": cmd_board, "artifact": cmd_artifact,
                 "digest": lambda a: _session_view(a, "digest", {"after": a.after}),
                 "decisions": lambda a: _session_view(a, "decisions"), "standup": lambda a: _session_view(a, "standup"), "status": lambda a: _session_view(a, "status"),
-                "approval": cmd_approval, "lease": cmd_lease, "flow": lambda a: _session_view(a, "flow"),
+                "blockers": lambda a: _session_view(a, "blockers"),
+                "search": lambda a: _session_view(a, "search", {"q": " ".join(a.query), "limit": a.limit}),
+                "brief": lambda a: _session_view(a, "brief", {"principal": a.member}),
+                "hook": cmd_hook, "hooks": cmd_hooks, "claude-channel": cmd_claude_channel, "channel": cmd_topic_channel, "compaction": cmd_compaction,
+                "approval": cmd_approval, "hold": cmd_hold, "standdown": cmd_standdown, "quiet": cmd_quiet, "lease": cmd_lease, "flow": lambda a: _session_view(a, "flow"),
                 "attention": lambda a: _me_view("attention", a), "overview": lambda a: _me_view("overview", a),
                 "question": cmd_question, "reconcile": cmd_reconcile, "outbox": cmd_outbox, "task": cmd_task,
                 "checkpoint": cmd_checkpoint, "join": cmd_join, "protocol": cmd_protocol, "skill": cmd_skill,
-                "export": cmd_export, "invite": cmd_invite, "reference": cmd_reference}[a.cmd](a)
+                "export": cmd_export, "invite": cmd_invite, "reference": cmd_reference}[a.cmd](a), a)
     except CliError as e:
         _print_error(e)
         return e.code
     except ValueError as e:                 # e.g. an invalid session name reaching clistate
         _print_error(CliError(EXIT_USAGE, "usage", str(e)))
         return EXIT_USAGE
+
+
+NO_NEWS = ("hook", "claude-channel", "wake", "sync", "watch", "hooks", "run", "join")
+
+
+def _with_inbox_news(rc: int, a) -> int:
+    """After a successful write, one line on stderr when unread events wait (from the board's
+    Glassboard-Inbox-Unread header); stdout stays exactly the command's own output."""
+    if rc == EXIT_OK and LAST_UNREAD and LAST_UNREAD != "0" and getattr(a, "cmd", None) not in NO_NEWS:
+        sys.stdout.flush()                   # the command's own output comes first, also when both are captured
+        print(f"inbox: {r2(LAST_UNREAD)} unread · glassboard sync to read them", file=sys.stderr)
+    return rc
 
 
 def main(argv=None) -> int:

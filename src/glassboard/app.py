@@ -20,7 +20,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import __version__, wake, api_runtime, api_status, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
+from . import __version__, hooks, wake, api_brief, api_blockers, api_holds, api_quiet, api_search, api_channels, api_runtime, api_status, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
 from . import flash, longpoll, mcp_adapter, textviews, tlsboot, transport
 from .metrics import Metrics
 from .sweeper import Sweeper
@@ -69,6 +69,10 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
     # the app then enforces LAN-only itself and warns everywhere.
     plain = plain_http if plain_http is not None else os.environ.get("GLASSBOARD_INSECURE_HTTP") == "1"
     lan_cidrs = transport.allowed_networks(os.environ.get("GLASSBOARD_ALLOWED_CIDRS")) if plain else None
+    try:   # B40: the board's auto-compaction threshold for clients started with `glassboard run`
+        compact_at = hooks.parse_compact_at(os.environ.get("GLASSBOARD_COMPACT_AT"))
+    except ValueError:
+        raise ConfigError("GLASSBOARD_COMPACT_AT must be a percentage from 1 to 100, or off.") from None
     if plain:
         log.warning("GLASSBOARD_INSECURE_HTTP=1: plain HTTP, NO TLS. Tokens and messages are readable by "
                     "anyone on the LAN. LAN-only is enforced by the app (%s).", " ".join(map(str, lan_cidrs)))
@@ -175,6 +179,32 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
     if plain:
         app.add_middleware(transport.LanOnlyMiddleware, networks=lan_cidrs)   # outside the Host check
 
+    async def _inbox_header(request: Request, response) -> None:
+        """Inbox news on every reply: after a successful session write, say how many events wait unread
+        in the caller's inbox (Glassboard-Inbox-Unread), so an agent learns of new messages without an
+        extra call. A header, never the body: receipts stay byte-identical on replay."""
+        params = request.scope.get("path_params") or {}
+        pid = getattr(request.state, "principal_id", None)
+        if (request.method not in ("POST", "PATCH", "DELETE") or response.status_code >= 300 or not pid
+                or "s" not in params or not request.url.path.startswith("/api/v1/sessions/")
+                or request.url.path.endswith("/sync")):
+            return
+        from starlette.concurrency import run_in_threadpool
+        from . import api_brief
+
+        def count():
+            with app.state.db.read() as c:
+                sess = c.execute("SELECT * FROM session WHERE handle=?", (params["s"],)).fetchone()
+                me = sess and c.execute("SELECT * FROM member WHERE session_id=? AND principal_id=? AND left_at IS NULL",
+                                        (sess["id"], pid)).fetchone()
+                return api_brief._inbox_unacked(c, sess, me) if me else None
+        try:
+            n = await run_in_threadpool(count)
+        except Exception:                                   # noqa: BLE001 - news is best effort, never an error
+            return
+        if n is not None:
+            response.headers["Glassboard-Inbox-Unread"] = f"{n}" if n <= api_brief.INBOX_COUNT_CAP else f"{api_brief.INBOX_COUNT_CAP}+"
+
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         rid = request_id(request)
@@ -195,6 +225,7 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
             location = response.headers.get("location", "")
             if code and location.startswith("/"):
                 response.headers["location"] = flash.with_code(location, "ok", code)
+        await _inbox_header(request, response)
         response.headers["X-Request-Id"] = rid
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -238,7 +269,7 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
                          "messages", "questions", "sync", "history", "export", "tasks", "checkpoints",
                          "board", "attention", "overview", "checklists", "dependencies", "drafts", "priority",
                          "digest", "decisions", "standup", "leases", "approvals", "review", "handoff", "flow", "invites",
-                         "artifacts", "wake"],
+                         "artifacts", "wake", "brief", "decline", "holds", "standdown", "quiet_hours", "blockers", "verification", "search", "channels"],
             "limits": {"max_body_bytes": MAX_BODY, "auth_failures_per_min_per_ip": AUTH_FAILURES_PER_MIN,
                        "message_body_bytes": api_messages.MAX_BODY_BYTES, "recipients_per_message": api_messages.MAX_RECIPIENTS,
                        "refs_per_event": 10, "page_size_default": 50, "page_size_max": 100,
@@ -248,6 +279,8 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
                        "artifact_bytes": api_artifacts.MAX_ARTIFACT_BYTES,
                        "session_artifact_bytes": api_artifacts.MAX_SESSION_ARTIFACT_BYTES},
         }
+        d["compaction"] = {"at_percent": compact_at, "default": hooks.DEFAULT_COMPACT_AT,
+                           "notes": "for clients started with `glassboard run`; agents and runs may override"}
         if plain:
             d["transport"] = "plain-http"
             d["warning"] = transport.PLAIN_WARNING
@@ -306,6 +339,12 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
     app.include_router(api_roles.session_router)
     app.include_router(wake.router)
     app.include_router(api_runtime.router)
+    app.include_router(api_brief.router)
+    app.include_router(api_holds.router)
+    app.include_router(api_quiet.router)
+    app.include_router(api_blockers.router)
+    app.include_router(api_search.router)
+    app.include_router(api_channels.router)
     app.include_router(api_status.router)
     dashboard.mount(app)
     if mcp_endpoint is not None:

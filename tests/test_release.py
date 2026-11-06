@@ -18,9 +18,9 @@ from glassboard.cli import build_parser
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BIN = pathlib.Path(sys.executable).parent
-GUIDES = ["README.md", "docs/how-it-works.md", "docs/usage.md", "docs/deploy.md", "docs/onboarding.md",
+GUIDES = ["README.md", "README.es.md", "docs/how-it-works.md", "docs/usage.md", "docs/deploy.md", "docs/onboarding.md",
           "docs/rehearsal.md"]
-ADMIN_COMMANDS = {"init", "add-human", "add-agent", "mint-token", "revoke-token", "deactivate", "revoke-admin",
+ADMIN_COMMANDS = {"init", "quickstart", "add-human", "add-agent", "mint-token", "revoke-token", "deactivate", "revoke-admin",
                   "revoke-web-sessions", "set-admin-password", "backup", "restore", "setup-tls"}
 
 

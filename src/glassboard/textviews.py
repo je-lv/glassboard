@@ -8,6 +8,10 @@ from __future__ import annotations
 from . import render
 
 
+# How an obligation is named in text views (sync, brief, attention).
+OWED_WHAT = {"question": "question", "approval": "approval request", "hold": "hold",
+             "standdown.requested": "stand-down request"}
+
 def view_lines(v: dict) -> list[str]:
     """Canonical text of one event view (render.event_lines applies every text-rendering rule)."""
     data = dict(v["data"] or {})
@@ -16,7 +20,8 @@ def view_lines(v: dict) -> list[str]:
     return render.event_lines({"seq": v["seq"], "ts": v["ts"], "actor": v["actor"], "runtime": v["runtime"],
                                "type": v["type"], "broadcast": v["to"] == "all",
                                "recipients": [] if v["to"] == "all" else v["to"], "task_num": v["task"],
-                               "reply_to": v["re"], "body": v["body"], "data": data})
+                               "reply_to": v["re"], "body": v["body"], "data": data, "read": v.get("read"),
+                               "channel": v.get("channel")})
 
 
 def sync_text(r: dict, runtime: str | None) -> str:
@@ -27,7 +32,7 @@ def sync_text(r: dict, runtime: str | None) -> str:
              render.NOTE_LINE,
              render.section("claims: " + (", ".join(_claim(x) for x in r["claims"]) or "none"))]
     for o in r["owed"]:
-        what = "approval request" if o.get("type") == "approval" else "question"
+        what = OWED_WHAT.get(o.get("type") or "question", "question")
         lines.append(render.section(f"owed: #{o['seq']} {what} from {o['from']} (unresolved, {o['age_s'] // 60}m)"))
     if r["owed_total"] > len(r["owed"]):
         lines.append(render.section(f"owed: … {r['owed_total'] - len(r['owed'])} more"))

@@ -28,7 +28,11 @@ TYPES = frozenset({
     "system.restored",
     "wake.armed", "wake.takeover", "wake.dispatched", "wake.inspected", "wake.paused", "wake.resumed",
     "wake.stopped", "wake.disarmed", "wake.held",
-    "runtime.exited",
+    "runtime.exited", "context.compacted",
+    "task.declined", "hold", "hold.decided", "hold.expired",          # B41
+    "standdown.requested", "standdown.done", "standdown.lifted",
+    "member.quiet",                                                    # B56
+    "channel.created", "channel.changed", "channel.archived", "channel.mode",   # B55
 })
 # Types appear inside header lines, whose grammar allows only [a-z.].
 assert all(re.fullmatch(r"[a-z.]+", t) for t in TYPES), "event types must match the header grammar"
@@ -38,7 +42,7 @@ def append(conn: sqlite3.Connection, session_id: str, actor_id: str, type_: str,
            recipients: Iterable[str] = (), broadcast: bool = False, runtime: str | None = None,
            task_num: int | None = None, reply_to: int | None = None, body: str | None = None,
            data: dict | None = None, op_id: str | None = None, req_digest: bytes | None = None,
-           receipt: Callable[[int], str] | None = None) -> tuple[int, str | None]:
+           receipt: Callable[[int], str] | None = None, channel: str | None = None) -> tuple[int, str | None]:
     """Append one event; returns (seq, receipt_text). `receipt` receives the new seq and returns
     the exact response body, so the receipt can name its own event."""
     if type_ not in TYPES:
@@ -51,13 +55,19 @@ def append(conn: sqlite3.Connection, session_id: str, actor_id: str, type_: str,
     text = receipt(seq) if receipt else None
     data_text = json.dumps(data, sort_keys=True) if data is not None else None
     size = len((body or "").encode("utf-8")) + len((data_text or "").encode("utf-8"))
+    # B54: what an agent (or client) author had been delivered and had acknowledged when it posted
+    read = conn.execute("SELECT m.delivered_seq, m.cursor_seq FROM member m JOIN principal p ON p.id=m.principal_id "
+                        "WHERE m.session_id=? AND m.principal_id=? AND p.kind IN ('agent','client')",
+                        (session_id, actor_id)).fetchone()
     conn.execute("UPDATE session SET head_seq=?, updated_at=?, bytes_used=bytes_used+? WHERE id=?",
                  (seq, now, size, session_id))
     conn.execute(
         "INSERT INTO event(session_id,seq,id,recovery_id,epoch,ts,actor_id,runtime,type,broadcast,"
-        "task_num,reply_to,body,data,op_id,req_digest,receipt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "task_num,reply_to,body,data,op_id,req_digest,receipt,read_delivered,read_acked,channel) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (session_id, seq, ids.new_ulid(), s["recovery_id"], s["epoch"], now, actor_id, runtime, type_,
-         int(broadcast), task_num, reply_to, body, data_text, op_id, req_digest, text))
+         int(broadcast), task_num, reply_to, body, data_text, op_id, req_digest, text,
+         read["delivered_seq"] if read else None, read["cursor_seq"] if read else None, channel))
     rset = frozenset(recipients)
     for pid in sorted(rset):
         conn.execute("INSERT INTO event_recipient(session_id,seq,principal_id) VALUES (?,?,?)",

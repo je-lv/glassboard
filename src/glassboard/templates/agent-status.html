@@ -6,6 +6,8 @@
   <div class="item-head">
     <a class="actor-badge actor-{{ a.style }}" href="/s/{{ sess.handle }}/agent?as={{ a.member }}" title="@{{ a.member }}: open the agent view"><span class="actor-mark" aria-hidden="true">{{ a.mark }}</span><span>{{ a.name }}</span></a>
     <span class="tag st st-{{ pills[a.state] }}">{{ a.state_label }}</span>
+    {% if a.quiet and a.quiet.active %}<span class="tag" title="Quiet hours {{ a.quiet.window }}: no wakes until they end. Nothing is hidden or dropped.">quiet until {{ a.quiet.until[11:16] }} UTC</span>{% endif %}
+    {% if a.compacted_unsaved %}<span class="tag st st-blocked" title="Its client compacted its context after its latest checkpoint. A risk signal, not proof it lost track.">compacted, no checkpoint since</span>{% endif %}
   </div>
   <p class="item-body">{{ a.reason }}</p>
   <dl class="item-meta agent-facts">
@@ -15,6 +17,7 @@
     <div><dt>Last event</dt><dd>{% if a.last_event %}<a href="/s/{{ sess.handle }}?f=all#e{{ a.last_event.seq }}">{{ a.last_text }}</a>{% else %}{{ a.last_text }}{% endif %}</dd></div>
     {% if a.runs %}<div><dt>Run</dt><dd><span class="ev-run" title="One run of this agent's client process (its runtime label), not a member or a mention.">{{ a.runs[0].run }}</span> · started {{ a.run_started }} ago{% if a.runs|length > 1 %} · {{ a.runs|length }} runs seen{% endif %}</dd></div>{% endif %}
     <div><dt>Checkpoint</dt><dd>{{ a.checkpoint_text }}</dd></div>
+    {% if a.compaction_text %}<div><dt>Compacted</dt><dd><a href="/s/{{ sess.handle }}?f=all#e{{ a.compaction.seq }}">{{ a.compaction_text }}</a></dd></div>{% endif %}
     {% if a.doing %}<div class="agent-doing"><dt>Says it is doing</dt><dd><span class="muted">self-reported, {{ a.doing_age }} ago:</span> {{ a.doing.text }}</dd></div>{% endif %}
   </dl>
 </div></li>{% endfor %}

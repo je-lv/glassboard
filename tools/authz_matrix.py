@@ -123,6 +123,24 @@ POLICY = {
     ("GET", "/api/v1/sessions/{s}/decisions"): SESSION_READ,
     ("GET", "/api/v1/sessions/{s}/standup"): SESSION_READ,
     ("GET", "/api/v1/sessions/{s}/status"): SESSION_READ,
+    ("GET", "/api/v1/sessions/{s}/brief"): SESSION_READ,               # B40: own brief; coordinators read others'
+    ("POST", "/api/v1/sessions/{s}/context/compacted"): SESSION_WRITE,   # B40: reports only
+    # B41: decline (the fence or the assignment decides, 409), holds (agents raise, humans decide), stand-down
+    ("POST", "/api/v1/sessions/{s}/tasks/{t}/decline"): SESSION_WRITE,
+    ("POST", "/api/v1/sessions/{s}/holds"): POSTERS,
+    ("POST", "/api/v1/sessions/{s}/holds/{seq}"): HUMAN_COORD,          # the deciders it names (here jo) or a human coordinator
+    ("POST", "/api/v1/sessions/{s}/standdowns"): HUMAN_COORD,           # a human coordinator or the agent's owner (jo)
+    ("POST", "/api/v1/sessions/{s}/standdowns/{seq}/done"): rule(ok=("observer",)),   # only the agent asked (here jo/obs)
+    ("POST", "/api/v1/sessions/{s}/standdowns/{seq}/lift"): HUMAN_COORD,
+    # B56: humans only; here the body names jo/agentm (owned by jo); mo may set only their own
+    ("POST", "/api/v1/sessions/{s}/quiet-hours"): HUMAN_COORD,
+    ("GET", "/api/v1/sessions/{s}/blockers"): SESSION_READ,
+    ("GET", "/api/v1/sessions/{s}/search"): SESSION_READ,
+    # B55: anyone in the session reads channels; humans (not viewers) and coordinators manage them; members set their mode
+    ("GET", "/api/v1/sessions/{s}/channels"): SESSION_READ,
+    ("POST", "/api/v1/sessions/{s}/channels"): rule(ok=("human_member", "human_coord", "agent_coord")),
+    ("POST", "/api/v1/sessions/{s}/channels/{name}"): rule(ok=("human_member", "human_coord", "agent_coord")),
+    ("POST", "/api/v1/sessions/{s}/channels/{name}/mode"): SESSION_WRITE,          # 409 for a non-member of the channel
     ("GET", "/api/v1/me/attention"): AUTHENTICATED,                      # only the caller's own items
     ("GET", "/api/v1/me/overview"): AUTHENTICATED,
     ("GET", "/api/v1/sessions/{s}/checkpoints"): SESSION_READ,          # own checkpoint (404 "No such checkpoint." is ok)
@@ -212,6 +230,18 @@ BODIES = {
     ("POST", "/api/v1/sessions/{s}/tasks/{t}/cancel"): lambda ctx: {},
     ("POST", "/api/v1/sessions/{s}/tasks/{t}/reopen"): lambda ctx: {},
     ("POST", "/api/v1/sessions/{s}/checkpoints"): lambda ctx: {"summary": "s", "next_action": "n"},
+    ("POST", "/api/v1/sessions/{s}/context/compacted"): lambda ctx: {"trigger": "auto"},
+    ("POST", "/api/v1/sessions/{s}/tasks/{t}/decline"): lambda ctx: {"reason": "r", "fence": ctx["fence"]},
+    ("POST", "/api/v1/sessions/{s}/holds"): lambda ctx: {"body": "wait", "default": "I continue", "deadline_min": 5},
+    ("POST", "/api/v1/sessions/{s}/holds/{seq}"): lambda ctx: {"decision": "proceed"},
+    ("POST", "/api/v1/sessions/{s}/standdowns"): lambda ctx: {"member": "jo/obs", "reason": "r"},
+    ("POST", "/api/v1/sessions/{s}/standdowns/{seq}/done"): lambda ctx: {},
+    ("POST", "/api/v1/sessions/{s}/standdowns/{seq}/lift"): lambda ctx: {},
+    ("POST", "/api/v1/sessions/{s}/channels"): lambda ctx: {"name": f"c{ids.new_ulid()[-6:].lower()}"},
+    ("POST", "/api/v1/sessions/{s}/channels/{name}"): lambda ctx: {"topic": "t" + ids.new_ulid()[-6:]},
+    ("POST", "/api/v1/sessions/{s}/channels/{name}/mode"): lambda ctx: {"mode": "mute"},
+    ("POST", "/api/v1/sessions/{s}/quiet-hours"): lambda ctx: {"member": "jo/agentm", "start": "22:00", "end": "07:00",
+                                                               "tz": "UTC"},
     ("POST", "/api/v1/sessions/{s}/leases"): lambda ctx: {"resource": ctx["resource"]},
     ("POST", "/api/v1/sessions/{s}/invites"): lambda ctx: {"agent": f"i{ids.new_ulid()[-8:].lower().replace('0', 'a')}"},
     ("POST", "/api/v1/join"): lambda ctx: {"code": "AAAA-AAAA-AAAA"},
@@ -281,6 +311,10 @@ class Instance:
         if own["state"] != "active":
             self.req("POST", "/api/v1/sessions/own/state", "human_coord", {"state": "active", "reason": "matrix"})
         ctx["resource"] = f"res-{ids.new_ulid()[-8:].lower()}"
+        # A stand-down left open by an earlier route would refuse later claims: lift every one first.
+        evs = self.req("GET", "/api/v1/sessions/own/events?type=standdown.requested&limit=100", "human_coord").json()
+        for e in evs.get("events", []):
+            self.req("POST", f"/api/v1/sessions/own/standdowns/{e['seq']}/lift", "human_coord", {})
         if path.endswith("/leases/release"):
             self.req("POST", "/api/v1/sessions/own/leases", "agent_member", {"resource": ctx["resource"]})
         if "{t}" in path:
@@ -289,7 +323,7 @@ class Instance:
             t = self.req("POST", "/api/v1/sessions/own/tasks", "human_coord",
                          {"title": "t", "scope": "s", "deliverable": "d", **extra}).json()["task"]
             ctx["t"] = str(t)
-            if path.endswith(("/note", "/block", "/unblock", "/submit", "/release", "/reclaim")):
+            if path.endswith(("/note", "/block", "/unblock", "/submit", "/release", "/reclaim", "/decline")):
                 ctx["fence"] = self.req("POST", f"/api/v1/sessions/own/tasks/{t}/claim", "agent_member", {}).json()["fence"]
                 if path.endswith("/unblock"):
                     self.req("POST", f"/api/v1/sessions/own/tasks/{t}/block", "agent_member", {"fence": ctx["fence"], "reason": "r"})
@@ -301,18 +335,28 @@ class Instance:
                 self.req("POST", f"/api/v1/sessions/own/tasks/{t}/cancel", "human_coord", {})
             ctx["version"] = self.req("GET", f"/api/v1/sessions/own/tasks/{t}", "human_coord").json()["version"]
             ctx.setdefault("fence", f"T{t}g1-aaaaaaaaaa")
-        if "{seq}" in path and "/approvals/" in path:
+        if "{seq}" in path and "/holds/" in path:
+            ctx["seq"] = str(self.req("POST", "/api/v1/sessions/own/holds", "agent_member",
+                                      {"body": "wait", "default": "I continue", "deadline_min": 5}).json()["seq"])
+        elif "{seq}" in path and "/standdowns/" in path:
+            ctx["seq"] = str(self.req("POST", "/api/v1/sessions/own/standdowns", "human_coord",
+                                      {"member": "jo/obs", "reason": "r"}).json()["seq"])
+        elif "{seq}" in path and "/approvals/" in path:
             ctx["seq"] = str(self.req("POST", "/api/v1/sessions/own/messages", "agent_member",
                                       {"kind": "approval", "body": "may I?", "to": ["mo"]}).json()["seq"])
         elif "{seq}" in path:
             ctx["seq"] = str(self.req("POST", "/api/v1/sessions/own/messages", "human_coord",
                                       {"kind": "question", "body": "q?", "to": ["jo/agentm"]}).json()["seq"])
+        if "{name}" in path and "/channels/" in path:
+            ctx["name"] = f"c{ids.new_ulid()[-6:].lower()}"
+            self.req("POST", "/api/v1/sessions/own/channels", "human_coord",
+                     {"name": ctx["name"], "members": ["jo/agentm", "jo/agentc", "mo", "jo/obs"]})
         if "{handle:path}" in path:
             self.req("POST", "/api/v1/sessions/own/members", "human_coord", {"handle": "nobody/extra"})
             ctx["handle:path"] = "nobody/extra"
         if "{credential_id}" in path:
             ctx["credential_id"] = self.req("POST", "/api/v1/me/tokens", "human_member", {}).json()["id"]
-        if "{name}" in path:
+        if "{name}" in path and "/roles/" in path:
             ctx["name"] = "architect"
         if "{artifact_id}" in path:
             made = self.req("POST", "/api/v1/sessions/own/artifacts", "agent_member", {})

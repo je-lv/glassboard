@@ -1,4 +1,4 @@
-{% from "evline.html" import evtext, evcard %}
+{% from "evline.html" import evtext, evcard, evrow %}
 <div class="timeline-title"><h2>Activity</h2>
 <div class="timeline-key" aria-label="Activity color key">
   <span><i class="key-dot key-session" aria-hidden="true"></i>Session</span>
@@ -16,7 +16,15 @@
   <a href="/s/{{ sess.handle }}?{{ oldest_query }}"{% if order == "oldest" %} aria-current="true"{% endif %}>oldest <span aria-hidden="true">→</span> newest</a>
   <a href="/s/{{ sess.handle }}?{{ newest_query }}"{% if order == "newest" %} aria-current="true"{% endif %}>newest <span aria-hidden="true">→</span> oldest</a>
 </nav></div>
+<nav class="timeline-density" aria-label="Activity density">
+  <a href="/s/{{ sess.handle }}?{{ cards_query }}"{% if density != "compact" %} aria-current="true"{% endif %}>Cards</a>
+  <a href="/s/{{ sess.handle }}?{{ compact_query }}"{% if density == "compact" %} aria-current="true"{% endif %}>Compact</a>
+  {% if channel %}<span class="chip on">only #{{ channel }} <a href="/s/{{ sess.handle }}?{{ all_channels_query }}" aria-label="Show every channel">×</a></span>{% endif %}
+  {% if actor %}<span class="chip on">only @{{ actor }} <a href="/s/{{ sess.handle }}?{{ all_actors_query }}" aria-label="Show everyone">×</a></span>{% endif %}
+</nav>
 {% if not timeline %}<p class="muted">Nothing here yet.</p>{% endif %}
+{% if density == "compact" %}<div class="ev-rows">{% for ev in timeline %}{{ evrow(ev, sess.handle) }}{% endfor %}</div>{% else %}
 {% for ev in timeline %}
 {% call evcard(ev, sess.handle) %}{% if ev.type == "proposal" and can_coordinate %}<a class="act" href="/s/{{ sess.handle }}/new-task?from={{ ev.seq }}">make a task from #{{ ev.seq }}</a>{% endif %}{% endcall %}
 {% endfor %}
+{% endif %}

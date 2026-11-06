@@ -200,6 +200,35 @@ a2=$("${J[@]}" glassboard artifact get "$ARTIFACT" --out "$WORK/artifact-downloa
 [ -n "$ARTIFACT" ] && cmp -s "$WORK/artifact.txt" "$WORK/artifact-downloaded.txt" && [[ "$a2" == *"sha256"* ]] \
   && pass "immutable artifact upload and integrity-checked download over TLS" || fail "artifact: $a1 | $a2"
 
+# B40: a client hook reports a compaction; the resume brief then flags it, live state first
+h1=$(echo '{"hook_event_name":"PostCompact","trigger":"auto"}' | glassboard hook compacted --client claude 2>&1); hrc=$?
+h2=$(echo '{"hook_event_name":"SessionStart","source":"compact"}' | glassboard hook session-start --client claude 2>/dev/null)
+echo "$h2" | python -c 'import json,sys; t=json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"]; assert t.startswith("--- resume brief") and "conflict: context compacted" in t and len(t) <= 6000' 2>/dev/null \
+  && [ $hrc = 0 ] && [ -z "$h1" ] && pass "compaction hook records the event; session-start hook returns the brief over TLS" || fail "brief/hooks: rc=$hrc $h1 | $(echo "$h2" | head -c 200)"
+
+# B41: an agent raises a hold (it blocks nothing); the human upholds it once
+ho=$(glassboard hold raise "Wait before renaming the docs" --default "I rename them at the deadline" --deadline 30m 2>&1)
+hseq=$(echo "$ho" | sed -n 's/^hold #\([0-9]*\) raised.*/\1/p')
+hd=$("${J[@]}" glassboard hold decide "$hseq" uphold 2>&1)
+[ -n "$hseq" ] && [[ "$hd" == "hold #$hseq upheld"* ]] && pass "an agent's hold reaches the human, who upholds it once over TLS" || fail "hold: $ho | $hd"
+
+# B56: the owner sets quiet hours for the agent; status shows them; clearing is visible too
+q1=$("${J[@]}" glassboard quiet set --for jose/claude --from 22:00 --to 07:00 --tz UTC 2>&1)
+q2=$("${J[@]}" glassboard quiet show 2>&1); q3=$("${J[@]}" glassboard quiet clear --for jose/claude 2>&1)
+[[ "$q1" == "@jose/claude quiet hours: 22:00-07:00 UTC"* ]] && [[ "$q2" == *"quiet hours: «22:00-07:00 UTC"* ]] \
+  && [[ "$q3" == "@jose/claude quiet hours: off"* ]] && pass "quiet hours set, shown in status and cleared over TLS" || fail "quiet: $q1 | $q3"
+
+# B45: session search finds an agent's message over TLS
+"${J[@]}" glassboard post note "Rotate the kestrel certificate" >/dev/null 2>&1
+sr=$(glassboard search kestrel certificate 2>&1)
+[[ "$sr" == *"Rotate the kestrel certificate"* ]] && pass "session search finds a message over TLS" || fail "search: $(echo "$sr" | head -c 200)"
+
+# B55: a topic channel created by the human; the agent posts in it; history shows only that channel
+"${J[@]}" glassboard channel create design --topic "Layout" --member jose/claude >/dev/null 2>&1
+glassboard post note "Channel post over TLS" --channel design >/dev/null 2>&1
+ch=$("${J[@]}" glassboard history --channel design 2>&1)
+[[ "$ch" == *"Channel post over TLS"* && "$ch" == *"channel: «#design»"* ]] && pass "topic channel post reaches the channel over TLS" || fail "channel: $(echo "$ch" | head -c 200)"
+
 # Pause over TLS: the agent's claim is refused with session_paused; resume restores it.
 "${J[@]}" glassboard task create "Paused task" --scope "s" --deliverable "d" >/dev/null 2>&1
 o1=$("${J[@]}" glassboard session pause "verify harness" 2>&1); o2=$(glassboard task claim T2 2>&1); rc=$?

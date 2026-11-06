@@ -19,7 +19,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from . import render  # noqa: F401  (kept for callers)
-from .textviews import view_lines  # noqa: F401  re-exported
+from .textviews import OWED_WHAT, view_lines  # noqa: F401  re-exported
 
 INBOX_SQL = """
 SELECT e.* FROM event e
@@ -33,16 +33,21 @@ ORDER BY e.seq LIMIT :limit
 OWED_SQL = """
 SELECT q.seq, q.ts, q.actor_id, q.type FROM event q
 JOIN event_recipient er ON er.session_id = q.session_id AND er.seq = q.seq AND er.principal_id = :p
-WHERE q.session_id = :s AND q.type IN ('question', 'approval')
+WHERE q.session_id = :s AND q.type IN ('question', 'approval', 'hold', 'standdown.requested')
   AND NOT EXISTS (SELECT 1 FROM event a WHERE a.session_id = q.session_id AND a.reply_to = q.seq
                   AND a.type = 'answer' AND a.actor_id = :p)
   AND NOT EXISTS (SELECT 1 FROM event d WHERE d.session_id = q.session_id AND d.reply_to = q.seq
-                  AND d.type IN ('approval.granted', 'approval.denied'))
+                  AND d.type IN ('approval.granted', 'approval.denied', 'hold.decided', 'hold.expired',
+                                 'standdown.done', 'standdown.lifted'))
   AND NOT EXISTS (SELECT 1 FROM event r WHERE r.session_id = q.session_id AND r.reply_to = q.seq
                   AND r.type = 'question.resolved'
                   AND (json_extract(r.data, '$.scope') = 'all' OR r.actor_id = :p))
 ORDER BY q.seq
 """
+
+
+def owed_what(type_: str | None) -> str:
+    return OWED_WHAT.get(type_ or "question", "question")
 
 
 def handle_map(conn: sqlite3.Connection, ids) -> dict[str, str]:
@@ -59,21 +64,42 @@ def recipients(conn: sqlite3.Connection, session_id: str, seq: int) -> list[str]
         "WHERE er.session_id=? AND er.seq=? ORDER BY p.handle", (session_id, seq))]
 
 
-def event_view(conn: sqlite3.Connection, row, handles: dict[str, str] | None = None) -> dict:
+def agent_ids(conn: sqlite3.Connection, ids) -> set[str]:
+    ids = list({i for i in ids if i})
+    if not ids:
+        return set()
+    q = ",".join("?" * len(ids))
+    return {r[0] for r in conn.execute(f"SELECT id FROM principal WHERE kind IN ('agent','client') AND id IN ({q})", ids)}
+
+
+def read_view(row, agents: set[str] | None) -> dict | str | None:
+    """B54: what the author had read when it posted. 'unknown' for an agent event from before the stamp."""
+    keys = row.keys()
+    delivered = row["read_delivered"] if "read_delivered" in keys else None
+    if delivered is not None:
+        return {"delivered": delivered, "acked": row["read_acked"]}
+    return "unknown" if agents is not None and row["actor_id"] in agents else None
+
+
+def event_view(conn: sqlite3.Connection, row, handles: dict[str, str] | None = None,
+               agents: set[str] | None = None) -> dict:
     """The public JSON form of one event. Never receipts, digests or op IDs."""
     handles = handles if handles is not None else handle_map(conn, [row["actor_id"]])
+    agents = agents if agents is not None else agent_ids(conn, [row["actor_id"]])
     data = json.loads(row["data"]) if row["data"] else None
     refs = data.pop("refs", None) if isinstance(data, dict) else None
     return {"seq": row["seq"], "ts": row["ts"], "actor": handles.get(row["actor_id"], "?"), "runtime": row["runtime"],
             "type": row["type"], "to": "all" if row["broadcast"] else recipients(conn, row["session_id"], row["seq"]),
             "task": row["task_num"], "re": row["reply_to"], "body": row["body"], "data": data or None,
-            "refs": refs or [], "epoch": row["epoch"]}
+            "refs": refs or [], "epoch": row["epoch"], "read": read_view(row, agents),
+            "channel": row["channel"] if "channel" in row.keys() else None}
 
 
 def views(conn: sqlite3.Connection, rows) -> list[dict]:
     rows = list(rows)
     h = handle_map(conn, [r["actor_id"] for r in rows])
-    return [event_view(conn, r, h) for r in rows]
+    a = agent_ids(conn, [r["actor_id"] for r in rows])
+    return [event_view(conn, r, h, a) for r in rows]
 
 
 def inbox_page(conn: sqlite3.Connection, sess, me, cursor: int, limit: int) -> tuple[list, bool]:
@@ -103,7 +129,8 @@ def obligation_holders(conn: sqlite3.Connection, session_id: str, q_seq: int) ->
           AND NOT EXISTS (SELECT 1 FROM event a WHERE a.session_id = :s AND a.reply_to = :q
                           AND a.type = 'answer' AND a.actor_id = er.principal_id)
           AND NOT EXISTS (SELECT 1 FROM event d WHERE d.session_id = :s AND d.reply_to = :q
-                          AND d.type IN ('approval.granted', 'approval.denied'))
+                          AND d.type IN ('approval.granted', 'approval.denied', 'hold.decided', 'hold.expired',
+                                 'standdown.done', 'standdown.lifted'))
           AND NOT EXISTS (SELECT 1 FROM event r WHERE r.session_id = :s AND r.reply_to = :q
                           AND r.type = 'question.resolved'
                           AND (json_extract(r.data, '$.scope') = 'all' OR r.actor_id = er.principal_id))

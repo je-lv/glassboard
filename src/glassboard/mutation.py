@@ -66,7 +66,7 @@ class SessionTx:
 
     def event(self, type_: str, *, receipt: Callable[[int], dict] | None = None, body: str | None = None,
               data: dict | None = None, task_num: int | None = None, reply_to: int | None = None,
-              capped: bool = True, **route_args) -> tuple[int, str | None]:
+              capped: bool = True, channel: str | None = None, **route_args) -> tuple[int, str | None]:
         """`capped=False` only for operations that must work on a full session (consumer
         attach/takeover: reading and acking must never be blocked by the storage cap)."""
         # no live secret and nothing shaped like a bearer token enters the log.
@@ -80,7 +80,8 @@ class SessionTx:
         build = (lambda seq: idempotency.receipt_body(receipt(seq))) if receipt else None
         return events.append(self.conn, self.session_id, self.p.id, type_, recipients=recipients,
                              broadcast=broadcast, runtime=self.runtime, task_num=task_num, reply_to=reply_to,
-                             body=body, data=data, op_id=self.key, req_digest=self.digest, receipt=build)
+                             body=body, data=data, op_id=self.key, req_digest=self.digest, receipt=build,
+                             channel=channel)
 
 
 @contextmanager

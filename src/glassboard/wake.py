@@ -54,7 +54,7 @@ from fastapi.responses import Response
 from pydantic import Field, StrictInt
 from starlette.concurrency import run_in_threadpool
 
-from . import db, longpoll, sessions, tokens
+from . import quiet, db, longpoll, sessions, tokens
 from .deps import authenticate, get_db, require_full_scope
 from .errors import ApiError
 from .idempotency import idempotency_key, respond
@@ -75,12 +75,13 @@ _ELIGIBLE_SQL = f"""
 SELECT category, count(*) AS n, max(seq) AS last FROM (
   SELECT e.seq,
     CASE
-      WHEN e.type = 'question' AND e.direct THEN 'question'
+      WHEN e.type IN ('question', 'hold', 'standdown.requested') AND e.direct THEN 'question'
       WHEN e.type IN ({",".join("'%s'" % t for t in MESSAGE_TYPES)}) AND pa.kind = 'human' THEN 'message'
       WHEN e.type = 'answer' AND (e.direct OR EXISTS (SELECT 1 FROM event q WHERE q.session_id = e.session_id
                                    AND q.seq = e.reply_to AND q.actor_id = :p)) THEN 'answer'   -- my question, even broadcast
       WHEN e.type LIKE 'task.%' AND e.direct THEN 'task'
-      WHEN e.type IN ('approval.granted', 'approval.denied') AND e.direct THEN 'approval'
+      WHEN e.type IN ('approval.granted', 'approval.denied', 'hold.decided', 'hold.expired', 'standdown.lifted')
+           AND e.direct THEN 'approval'
       WHEN e.type = 'session.resumed' AND pa.kind = 'human' THEN 'session'
     END AS category
   FROM (SELECT ev.*, EXISTS (SELECT 1 FROM event_recipient r WHERE r.session_id = ev.session_id
@@ -132,12 +133,23 @@ def demand(c, sess, me) -> dict:
             "counts": {k: counts[k] for k in CATEGORIES if k in counts}}
 
 
+HUMAN_CAUSED = ("message", "approval", "session")       # wake categories only a human (or a human decision) causes
+
+
+def quiet_allows(q: dict, d: dict) -> bool:
+    """During quiet hours a dispatch goes through only with `urgent` and human-caused demand pending."""
+    return bool(q.get("urgent")) and any(k in d["counts"] for k in HUMAN_CAUSED)
+
+
 def status(c, sess, me, presence: Presence | None = None) -> dict:
     d = demand(c, sess, me)
     armed = me["wake_secret"] is not None
     hold = {"reason": me["wake_hold"], "seq": me["wake_hold_seq"]} if armed and me["wake_hold"] is not None else None
     connected = presence.connected((sess["id"], me["principal_id"])) if armed and presence is not None else None
-    return {"session": sess["handle"], "session_state": sess["state"], **d,
+    q = quiet.of_member(me)
+    if q is not None:                                   # B56: the supervisor waits instead of dispatching
+        q["blocks_dispatch"] = q["active"] and not quiet_allows(q, d)
+    return {"session": sess["handle"], "session_state": sess["state"], **d, "quiet": q,
             "supervisor": {"state": me["wake_state"] if armed else "none", "adapter": me["wake_adapter"],
                            "runtime": me["wake_runtime"], "since": me["wake_since"], "fence_gen": me["wake_gen"],
                            "outstanding": me["wake_outstanding"],
@@ -310,6 +322,11 @@ def dispatch(s: str, body: DispatchIn, key: str = Depends(idempotency_key),
             raise ApiError(409, "dispatch_outstanding", "A dispatch is still waiting for its inspection.",
                            details={"outstanding": me["wake_outstanding"]})
         d = demand(tx.conn, tx.sess, me)
+        q = quiet.of_member(me)
+        if q is not None and q["active"] and not quiet_allows(q, d):
+            raise ApiError(409, "quiet_hours", "This agent is in its quiet hours; the wake waits until they end.",
+                           hint="Demand keeps accumulating and is dispatched once, coalesced, when the window ends.",
+                           details={"until": q["until"]})
         if not (me["wake_inspected"] < body.generation <= d["generation"]):
             raise ApiError(409, "nothing_pending", "There is no pending wake demand at that generation.",
                            details={"generation": d["generation"], "inspected": me["wake_inspected"]})

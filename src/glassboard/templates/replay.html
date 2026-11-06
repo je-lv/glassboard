@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Replay T{{ t.task }} · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<p class="crumb"><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> / <a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }}</a> / replay</p>
+<section class="head"><h1>Replay <span class="task-num">T{{ t.task }}</span> <span class="task-title">{{ title_line }}</span></h1>
+  <p class="muted">Every recorded event of this task, in order: who acted and whom it reached. Replies to the task's messages are included.</p></section>
+{% if not r.steps %}<p class="empty">Nothing recorded for this task yet.</p>{% else %}
+<section class="card replay" data-replay aria-labelledby="rp-h">
+  <div class="rp-bar"><h2 id="rp-h">{{ r.steps|length }} step{{ "s" if r.steps|length != 1 }}</h2>
+    <div class="rp-controls" data-rp-controls hidden>
+      <button type="button" class="small secondary" data-rp="back" aria-label="Previous step">Back</button>
+      <button type="button" class="small primary" data-rp="play">Play</button>
+      <button type="button" class="small secondary" data-rp="step" aria-label="Next step">Step</button>
+      <button type="button" class="small secondary" data-rp="reset">Reset</button>
+      <span class="rp-pos" data-rp-pos aria-live="polite"></span>
+    </div></div>
+  <div class="rp-scroll">
+  <svg class="rp-svg" width="{{ r.width }}" height="{{ r.height }}" viewBox="0 0 {{ r.width }} {{ r.height }}" role="img" aria-label="Sequence of the task's recorded events between members; the numbered list below has the same steps as text">
+    <defs><marker id="rp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path class="rp-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    {% for l in r.lanes %}<text class="rp-lane-name" x="{{ l.x }}" y="24" text-anchor="middle">@{{ l.handle }}</text>
+    <line class="rp-lane" x1="{{ l.x }}" y1="36" x2="{{ l.x }}" y2="{{ r.height - 8 }}"/>{% endfor %}
+    {% for s in r.steps %}<g class="rp-step rp-{{ s.cat }}" data-step="{{ s.n }}">
+      {% if s.broadcast %}<line class="rp-msg rp-all" x1="{{ r.lanes[0].x }}" y1="{{ s.y }}" x2="{{ r.lanes[-1].x }}" y2="{{ s.y }}"/>
+      {% elif s.self %}<circle class="rp-dot" cx="{{ s.x0 }}" cy="{{ s.y }}" r="6"/>
+      {% else %}{% for x in s.x_targets %}<line class="rp-msg" x1="{{ s.x0 }}" y1="{{ s.y }}" x2="{{ x }}" y2="{{ s.y }}" marker-end="url(#rp-arrow)"/>{% endfor %}{% endif %}
+      <circle class="rp-origin" cx="{{ s.x0 }}" cy="{{ s.y }}" r="3"/>
+      <text class="rp-label" x="{{ s.x0 + 10 if not s.x_targets or s.x_targets[0] > s.x0 else s.x0 - 10 }}" y="{{ s.y - 7 }}"{% if s.x_targets and s.x_targets[0] < s.x0 %} text-anchor="end"{% endif %}>#{{ s.seq }} {{ s.type }}{% if s.broadcast %} → everyone{% endif %}</text>
+    </g>{% endfor %}
+  </svg>
+  </div>
+  <ol class="rp-list">{% for s in r.steps %}
+    <li class="rp-item rp-{{ s.cat }}" data-step="{{ s.n }}" id="rp-{{ s.n }}"><span class="rp-when">{{ s.ts[11:19] }}</span>
+      <a href="/s/{{ sess.handle }}?f=all#e{{ s.seq }}">#{{ s.seq }}</a> <span class="handle">@{{ s.actor }}</span> <span class="ev-kind">{{ s.type }}</span>
+      {% if s.broadcast %}<span class="muted">to everyone</span>{% elif s.to %}<span class="muted">to {% for h in s.to %}@{{ h }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+      {% if s.detail %}<span class="rp-detail">{{ s.detail }}</span>{% endif %}</li>{% endfor %}</ol>
+  {% if r.truncated %}<p class="muted small-text">Showing the first {{ r.steps|length }} steps.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/replay.js"></script>{% endblock %}

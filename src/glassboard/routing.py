@@ -43,6 +43,13 @@ RULES = {
     "wake.takeover": "owner_and_coordinators", "wake.paused": "owner_and_coordinators",
     "wake.stopped": "owner_and_coordinators", "wake.held": "owner_and_coordinators",
     "runtime.exited": "owner_and_coordinators",          # B37: a client exited while holding work
+    "context.compacted": None,                           # B40: timeline only; read in status and brief
+    # B41: agents raise, humans decide
+    "task.declined": "coordinators", "hold": "explicit", "hold.decided": "resolution", "hold.expired": "resolution",
+    "standdown.requested": "member", "standdown.done": "owner_and_coordinators", "standdown.lifted": "member",
+    "member.quiet": "member",                            # B56: the member whose window changed
+    # B55: channel changes reach the channel's members; a member's own mode change reaches nobody
+    "channel.created": "explicit", "channel.changed": "explicit", "channel.archived": "explicit", "channel.mode": None,
 }
 assert set(RULES) == set(events.TYPES), "every event type needs a routing rule"
 
@@ -52,7 +59,7 @@ def route(conn: sqlite3.Connection, session_id: str, type_: str, actor_id: str, 
           claimant: str | None = None, previous_claimant: str | None = None,
           asker: str | None = None, resolved_for: list[str] | None = None,
           principal: str | None = None, waited: str | None = None,
-          reviewer: str | None = None) -> tuple[list[str], bool]:
+          reviewer: str | None = None, audience: list[str] | None = None) -> tuple[list[str], bool]:
     """All arguments are principal IDs. `to=None` (or empty) on explicit_or_all means broadcast."""
     rule = RULES[type_]
     if rule == ALL:
@@ -60,9 +67,14 @@ def route(conn: sqlite3.Connection, session_id: str, type_: str, actor_id: str, 
     if rule is None:
         return [], False
     if rule == "explicit_or_all":
-        if not to:
+        if audience is not None:                 # B55: a channel post reaches its audience, never "all"
+            ids = list(to) if to else list(audience)
+        elif not to:
             return [], True
-        ids = list(to)
+        else:
+            ids = list(to)
+    elif rule == "explicit":                     # the deciders the caller computed; never a broadcast
+        ids = list(to or [])
     elif rule == "member":
         ids = [member]
     elif rule == "assignee":

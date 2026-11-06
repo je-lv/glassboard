@@ -164,7 +164,7 @@ def test_full_v04_ddl_and_errata_columns(database):
                         "role_template_revision_immutable_u", "role_template_revision_immutable_d",
                         "workspace_archive_immutable_u", "workspace_archive_immutable_d",
                         "workspace_purge_immutable_u", "workspace_purge_immutable_d",
-                        "session_reject_purged_handle"}
+                        "session_reject_purged_handle", "event_fts_add"}
         b = r.execute("SELECT id, kind, owner_id FROM principal WHERE handle='board'").fetchone()
         assert (b["id"], b["kind"], b["owner_id"]) == (ids.BOARD_PRINCIPAL_ID, "system", None)
 

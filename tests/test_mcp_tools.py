@@ -25,8 +25,8 @@ from glassboard.app import create_app  # noqa: E402
 
 FENCE = re.compile(r"T\d+g\d+-[a-z2-7]{10}")
 CONSUMER = re.compile(r"C\d+-[a-z2-7]{10}")
-SEVEN = ["board_checkpoint", "board_digest", "board_history", "board_kanban", "board_lease", "board_post", "board_sync",
-         "board_task", "board_tasks", "board_whoami"]
+SEVEN = ["board_channels", "board_checkpoint", "board_digest", "board_history", "board_hold", "board_kanban", "board_lease", "board_post",
+         "board_standdown", "board_sync", "board_task", "board_tasks", "board_whoami"]
 
 
 class M:
@@ -104,7 +104,7 @@ def test_exactly_seven_tools_and_no_human_only_operations(m):
     assert sorted(tools) == SEVEN
     schema = lambda name: tools[name]["inputSchema"]["properties"]                       # noqa: E731
     assert schema("board_task")["action"]["enum"] == ["claim", "note", "check", "block", "unblock", "submit", "release",
-                                                      "reclaim", "review"]
+                                                      "decline", "reclaim", "review"]
     assert "decision" not in schema("board_post")["kind"]["enum"]
     assert schema("board_checkpoint")["action"]["enum"] == ["save", "show"]
     every_param = {p for t in tools.values() for p in t["inputSchema"].get("properties", {})}
@@ -445,3 +445,12 @@ def test_coordination_via_mcp(m):
     err, text = m.tool("ana/codex", "board_task", session="s1", recovery=m.rec(), op="op-rev-r1", task=f"T{n}",
                        action="review", verdict="approve", text="good", submission_seq=submitted, commit=commit)
     assert not err and "verdict approve" in text, text
+
+
+def test_b41_hold_and_decline_through_mcp(m):
+    err, text = m.tool("jose/claude", "board_hold", session="s1", recovery=m.rec(), op="op-hold-001", action="raise",
+                       text="Wait before the rename", default="I rename at the deadline", deadline_min=30)
+    assert not err, text
+    err, text = m.tool("jose/claude", "board_standdown", session="s1", recovery=m.rec(), op="op-sd-0001", seq=1)
+    assert err and "not_found" in text                      # #1 is not a stand-down request
+

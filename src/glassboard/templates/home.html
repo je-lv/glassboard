@@ -4,9 +4,10 @@
 {% from "segbar.html" import segbar %}
 {% macro ago(m) %}{{ m|ago_min }}{% endmacro %}
 {% set actions = {"review": "Review", "review_requested": "Review", "owed": "Answer", "waiting_on_you": "Respond",
+                  "standdown": "Open", "declined": "Reassign or cancel",
                   "proposal": "Create tasks", "stale": "Check task", "unacknowledged": "Check task"} %}
 <div class="section-head"><h1>Needs your attention</h1> <button type="button" id="notify-enable" class="small" hidden>Notify me</button></div>
-{% set tones = {"approval": "attention", "owed": "attention", "waiting_on_you": "attention", "unacknowledged": "attention",
+{% set tones = {"approval": "attention", "hold": "attention", "declined": "attention", "owed": "attention", "waiting_on_you": "attention", "unacknowledged": "attention",
                 "wake_held": "attention", "stale": "danger", "runtime_exited": "danger", "loop": "danger",
                 "review": "review", "review_requested": "review"} %}
 {% macro attention_item(i, first) %}
@@ -23,9 +24,15 @@
         <input name="note" maxlength="2000" placeholder="Note (optional)" aria-label="Note for request #{{ i.seq }}">
         <button type="submit" name="decision" value="grant" data-confirm="Grant approval request #{{ i.seq }} from @{{ i.from }} in {{ i.session }}? The agent may then act on it. Read the full request first if you have not." data-confirm-yes="Grant approval" data-confirm-no="Not yet">Grant</button> <button type="submit" class="danger" name="decision" value="deny">Deny</button>
       </form>{% endif %}
+      {% if i.kind == "hold" %}<p class="item-body">If nobody decides by {{ i.deadline_at[:16]|replace("T", " ") }} UTC: {{ i.default_line }}</p>
+      <form method="post" action="/s/{{ i.session }}/holds/{{ i.seq }}" class="inline approval-decide">
+        <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-h{{ i.seq }}">
+        <input name="note" maxlength="2000" placeholder="Note (optional)" aria-label="Note for hold #{{ i.seq }}">
+        <button type="submit" name="decision" value="uphold">Uphold: wait</button> <button type="submit" name="decision" value="proceed" data-confirm="Overrule hold #{{ i.seq }} from @{{ i.from }} in {{ i.session }}? The work it objects to may go ahead." data-confirm-yes="Proceed" data-confirm-no="Not yet">Proceed</button>
+      </form>{% endif %}
     </div>
     <div class="item-aside">
-      {% if i.kind != "approval" %}<a class="button{% if first %} primary{% endif %}" href="{{ href }}">{{ actions.get(i.kind, "Open") }}</a>{% endif %}
+      {% if i.kind not in ("approval", "hold") %}<a class="button{% if first %} primary{% endif %}" href="{{ href }}">{{ actions.get(i.kind, "Open") }}</a>{% endif %}
       {% if i.kind == "proposal" %}<form method="post" action="/attention/{{ i.session }}/{{ i.seq }}/dismiss" class="inline">
         <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-d{{ i.seq }}">
         <button type="submit" class="small" aria-label="Dismiss proposal {{ i.seq }} in {{ i.session }}">Dismiss</button>
@@ -35,7 +42,7 @@
 {% endmacro %}
 {% if not attention %}<p class="empty">Nothing needs you right now. New questions, reviews and approvals for you appear here.</p>{% else %}
 <ul class="list boxed attention-list">
-{% for i in attention[:10] %}{{ attention_item(i, loop.first and i.kind != "approval") }}{% endfor %}
+{% for i in attention[:10] %}{{ attention_item(i, loop.first and i.kind not in ("approval", "hold")) }}{% endfor %}
 </ul>
 {% if attention|length > 10 %}<details class="item-more attention-more"><summary>Show all {{ attention|length }} items</summary>
 <ul class="list boxed attention-list">{% for i in attention[10:] %}{{ attention_item(i, false) }}{% endfor %}</ul></details>{% endif %}
@@ -62,7 +69,7 @@
   {% set access_title = "Session Manager" if s.role == "coordinator" else ("Contributor" if s.role == "member" else "Viewer") %}
   <li class="item">
     <div class="item-main">
-      <div class="item-head"><a class="item-title stretch session-title" href="/s/{{ s.session }}">{{ s.title_line }}</a><span class="tag state state-{{ s.state }}">{{ s.state }}</span>{% if s.autonomous %}<span class="tag">autonomous</span>{% endif %}</div>
+      <div class="item-head"><a class="item-title stretch session-title" href="/s/{{ s.session }}/now">{{ s.title_line }}</a><span class="tag state state-{{ s.state }}">{{ s.state }}</span>{% if s.autonomous %}<span class="tag">autonomous</span>{% endif %}</div>
       <div class="item-meta"><span class="id">{{ s.session }}</span><span class="tag">{{ access_title }}</span>{% if s.o %}{% if s.o.stale %}<span class="stale">stale {{ s.o.stale }}</span>{% endif %}{% if s.o.owed %}<span>owed {{ s.o.owed }}</span>{% endif %}{% else %}<span>epoch {{ s.epoch }} · head #{{ s.head }}</span>{% endif %}<a href="/s/{{ s.session }}/board">Open board</a></div>
     </div>
     <div class="item-aside">{% if s.o %}<div class="scounts">{% call segbar(s.o.counts) %}{% endcall %}</div>{% endif %}<span class="item-go" aria-hidden="true">Open →</span></div>

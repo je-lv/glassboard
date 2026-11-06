@@ -22,7 +22,7 @@ matrix) and every rendering is the HTTP one by construction (checked by the MCP/
   - errors return the HTTP canonical error text, with isError set.
 No coordinator or human-only operation is a tool: no task create/edit/assign/accept/return/
 reassign/cancel/reopen, no `decision` messages, no coordinator release (a release needs a fence),
-no membership or session state, no reading other members' checkpoints.
+no membership or session state, no reading other members' checkpoints, no stand-down requests or lifts.
 Tool argument errors are reported like the HTTP 422 (field names and error types only, never the input); the
 SDK's own error text would quote the rejected input.
 """
@@ -52,7 +52,7 @@ MCP_SYNC_WAIT_MAX_S = 20
 _caller: contextvars.ContextVar[tuple[tokens.Principal, str] | None] = contextvars.ContextVar("gb_mcp_caller", default=None)
 RUNTIME = "mcp"                         # runtime label for every MCP call (stateless)
 POST_KINDS = ("question", "answer", "update", "proposal", "blocker", "note", "approval")     # no `decision`
-TASK_ACTIONS = ("claim", "note", "check", "block", "unblock", "submit", "release", "reclaim", "review")  # claimant actions only
+TASK_ACTIONS = ("claim", "note", "check", "block", "unblock", "submit", "release", "decline", "reclaim", "review")  # claimant actions only
 
 
 def available() -> bool:
@@ -211,7 +211,11 @@ def build_server(app=None, host: str = "localhost"):
             return _text(mcp_wording(r.text), error=True)
         if r.headers.get("content-type", "").startswith("text/plain"):
             return _text(mcp_wording(r.text))
-        return _text(receipt_text(what, r.status_code, r.json(), replayed, current_principal().handle, session, recovery))
+        text = receipt_text(what, r.status_code, r.json(), replayed, current_principal().handle, session, recovery)
+        unread = r.headers.get("glassboard-inbox-unread")
+        if unread and unread != "0":                     # inbox news on every reply
+            text = text.rstrip("\n") + "\n" + render.section(f"inbox: {unread} unread · board_sync to read them") + "\n"
+        return _text(text)
 
     @server.tool(name="board_whoami", description=(
         "Who am I on this board: handle, kind, owner, token scope, and each of my sessions with its current "
@@ -242,12 +246,16 @@ def build_server(app=None, host: str = "localhost"):
         "An update may carry `standup` {done?, doing?, blocked?}. kind=approval asks the humans named in `to` for "
         "permission; only they can grant it, and a grant covers exactly what you asked. "
         "A proposal may carry `drafts`: proposed tasks [{title, scope, deliverable, assignee?}] a human can create "
-        "in one step. op: your idempotency key (8-64 of A-Z a-z 0-9 _ -); reuse it only to retry the same post."))
+        "in one step. channel: post in a topic channel you belong to (it reaches the channel's members by their "
+        "follow/mentions/mute choice; `to` then names channel members). op: your idempotency key (8-64 of A-Z a-z 0-9 _ -); "
+        "reuse it only to retry the same post."))
     async def board_post(session: str, recovery: str, op: str, kind: Literal[POST_KINDS], body: str,
                          to: list[str] | None = None, re: int | None = None, task: str | None = None,
-                         refs: list[dict] | None = None, drafts: list[dict] | None = None, standup: dict | None = None):
+                         refs: list[dict] | None = None, drafts: list[dict] | None = None, standup: dict | None = None,
+                         channel: str | None = None):
         msg: dict = {"kind": kind, "body": body}
-        for k, v in (("to", to), ("re", re), ("task", task), ("refs", refs), ("drafts", drafts), ("standup", standup)):
+        for k, v in (("to", to), ("re", re), ("task", task), ("refs", refs), ("drafts", drafts), ("standup", standup),
+                     ("channel", channel)):
             if v is not None:
                 msg[k] = v
         r = await api.call("POST", f"/api/v1/sessions/{_seg(session)}/messages", body=msg, recovery=recovery, op=op)
@@ -256,10 +264,10 @@ def build_server(app=None, host: str = "localhost"):
     @server.tool(name="board_history", description=(
         "Read the session log as canonical text (filters: task, thread, after, to_me, type e.g. 'decision')."))
     async def board_history(session: str, task: str | None = None, thread: int | None = None, after: int = 0,
-                            limit: int = 50, to_me: bool = False, type: str | None = None):
+                            limit: int = 50, to_me: bool = False, type: str | None = None, channel: str | None = None):
         r = await api.call("GET", f"/api/v1/sessions/{_seg(session)}/events",
                            params={"task": task, "thread": thread, "after": after, "limit": limit,
-                                   "to": "me" if to_me else None, "type": type, "format": "text"})
+                                   "to": "me" if to_me else None, "type": type, "channel": channel, "format": "text"})
         return await respond(r, "history")
 
     @server.tool(name="board_digest", description=(
@@ -293,7 +301,9 @@ def build_server(app=None, host: str = "localhost"):
         "submit (text = summary; optional full commit and tests), release (text = handoff), reclaim (text = reason; new fence); submit/release take "
         "handoff {done?, next?, gotchas?}; note takes effort_min. review (verdict approve|changes, text = notes) names "
         "the exact submission_seq and repeats its commit when present; it is "
-        "for the named reviewer. Every action except claim/reclaim/review needs your fence. Creating, assigning "
+        "for the named reviewer. decline (text = reason) gives the task back: with your fence when you claimed it, "
+        "without one when it is only assigned to you. Every action except claim/reclaim/review/decline needs your "
+        "fence. Creating, assigning "
         "and resolving task outcomes are not available through this MCP tool."))
     async def board_task(session: str, recovery: str, op: str, task: str, action: Literal[TASK_ACTIONS],
                          text: str | None = None, fence: str | None = None, refs: list[dict] | None = None,
@@ -309,6 +319,8 @@ def build_server(app=None, host: str = "localhost"):
                     **({"commit": commit} if commit else {})}
         elif action == "reclaim":
             body = {"reason": text}
+        elif action == "decline":
+            body = {"reason": text, **({"fence": fence} if fence else {})}
         else:
             if fence is None:                     # without a fence, release would be the coordinator's op
                 return _error("invalid_request", "This action needs your fence.",
@@ -369,6 +381,49 @@ def build_server(app=None, host: str = "localhost"):
                 cp[k] = v
         r = await api.call("POST", path, body=cp, recovery=recovery, op=op)
         return await respond(r, "checkpoint save", session, recovery)
+
+    @server.tool(name="board_hold", description=(
+        "raise: object to something without stopping anyone. text = what should wait and why; default = what "
+        "happens if nobody decides; deadline_min 5-1440; optional task. Humans (or, for a child task in an "
+        "autonomous session, the coordinators) owe a decision; past the deadline the default applies. "
+        "decide: a decider named by hold `seq` answers uphold|proceed (note optional)."))
+    async def board_hold(session: str, recovery: str, op: str, action: Literal["raise", "decide"],
+                         text: str | None = None, default: str | None = None, deadline_min: int | None = None,
+                         task: str | None = None, seq: int | None = None,
+                         decision: Literal["uphold", "proceed"] | None = None, note: str | None = None):
+        if action == "raise":
+            body: dict = {"body": text, "default": default, "deadline_min": deadline_min}
+            if task is not None:
+                body["task"] = task
+            r = await api.call("POST", f"/api/v1/sessions/{_seg(session)}/holds", body=body, recovery=recovery, op=op)
+            return await respond(r, "hold raise", session, recovery)
+        r = await api.call("POST", f"/api/v1/sessions/{_seg(session)}/holds/{int(seq or 0)}",
+                           body={"decision": decision, **({"note": note} if note else {})}, recovery=recovery, op=op)
+        return await respond(r, "hold decide", session, recovery)
+
+    @server.tool(name="board_channels", description=(
+        "Topic channels in the session. list: every channel with its topic, members and their modes, and yours. "
+        "mode: set how a channel reaches you: follow (every message), mentions (only messages addressed to you or "
+        "replies to yours), mute (only messages addressed to you). Every channel's messages stay in the shared log "
+        "(board_history channel=NAME)."))
+    async def board_channels(session: str, action: Literal["list", "mode"], name: str | None = None,
+                             mode: Literal["follow", "mentions", "mute"] | None = None, recovery: str | None = None,
+                             op: str | None = None):
+        if action == "list":
+            r = await api.call("GET", f"/api/v1/sessions/{_seg(session)}/channels", params={"format": "text"})
+            return await respond(r, "channels")
+        r = await api.call("POST", f"/api/v1/sessions/{_seg(session)}/channels/{_seg(name or '')}/mode",
+                           body={"mode": mode}, recovery=recovery, op=op)
+        return await respond(r, "channel mode", session, recovery)
+
+    @server.tool(name="board_standdown", description=(
+        "Answer a human's stand-down request `seq` (it is in your owed list and brief): first release every "
+        "claim (board_task release with a handoff) and lease, and save a checkpoint; then call this. A human "
+        "lifts the stand-down when you may claim work again."))
+    async def board_standdown(session: str, recovery: str, op: str, seq: int, note: str | None = None):
+        r = await api.call("POST", f"/api/v1/sessions/{_seg(session)}/standdowns/{int(seq)}/done",
+                           body={"note": note} if note else {}, recovery=recovery, op=op)
+        return await respond(r, "stand-down done", session, recovery)
 
     return server
 

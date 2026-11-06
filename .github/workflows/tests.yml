@@ -1,0 +1,49 @@
+# Public CI: the test suite (with and without the optional MCP extra) and the packaging check on every
+# push and pull request. Dependencies install from the hash-locked files only; actions are pinned to
+# full commit SHAs. The end-to-end TLS check needs a Caddy binary and stays a local release step.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (${{ matrix.extra }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [core, mcp]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install hash-locked dependencies
+        run: |
+          python -m venv .venv
+          locks="-r requirements/build.lock -r requirements/server.lock -r requirements/dev.lock"
+          if [ "${{ matrix.extra }}" = mcp ]; then locks="$locks -r requirements/mcp.lock"; fi
+          .venv/bin/pip install --require-hashes $locks
+          .venv/bin/pip install --no-deps --no-build-isolation -e .
+      - name: Run the test suite
+        run: .venv/bin/python -m pytest -q
+
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Build the wheel and sdist, install into a clean environment, run the demo
+        run: ./scripts/package-check.sh

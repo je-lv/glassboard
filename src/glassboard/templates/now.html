@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ sess.handle }} now · Glassboard{% endblock %}
+{% block main %}
+<section class="head">
+  <h1>{{ sess.handle }} <span class="tag state state-{{ sess.state }}">{{ sess.state }}</span>{% if sess.autonomous %} <span class="tag">autonomous</span>{% endif %}</h1>
+  <div class="ln inl">{{ title_line }}</div>
+</section>
+{% set nav_active = "now" %}{% include "session-nav.html" %}
+<section class="card now-status" aria-label="Session at a glance">
+  <p class="now-counts">{% for k, n in counts if n or k in ("open", "in_progress", "review") %}<span class="now-count"><span class="tag st st-{{ k }}">{{ k.replace("_", " ") }}</span> <b>{{ n }}</b></span>{% endfor %}<span class="now-count">unread for you <b>{{ unread }}</b></span></p>
+  {% if total %}<p class="muted small-text">{{ total }} task{{ "s" if total != 1 }} in this session.</p>{% endif %}
+</section>
+<div class="now-grid">
+  <section class="card now-todo" aria-labelledby="todo-h">
+    <h2 id="todo-h">Do next <span class="muted small-text">most urgent first</span></h2>
+    {% if todo %}<ul class="todo-list">{% for x in todo %}
+      <li class="todo" data-tone="{{ x.tone }}"><a href="{{ x.href }}">
+        <span class="todo-body"><span class="todo-title">{{ x.title }}</span>{% if x.detail %}<span class="todo-detail">{{ x.detail }}</span>{% endif %}</span>
+        <span class="todo-act">{{ x.action }} <span aria-hidden="true">→</span></span></a></li>
+    {% endfor %}</ul>
+    {% else %}<p class="empty">Nothing needs you in this session right now.</p>{% endif %}
+  </section>
+  <section class="card now-agents" aria-labelledby="agents-h2">
+    <h2 id="agents-h2">Agents <span class="muted small-text">open one to see only its activity</span></h2>
+    {% if agents %}<ul class="now-agent-list">{% for a in agents %}
+      <li><a class="now-agent" href="/s/{{ sess.handle }}?f=all&amp;actor={{ a.member }}&amp;density=compact">
+        <span class="now-agent-head"><span class="actor-badge actor-{{ a.style }}"><span class="actor-mark" aria-hidden="true">{{ a.mark }}</span><span>{{ a.name }}</span></span> <span class="tag st st-{{ {'exited_holding': 'blocked', 'stale': 'blocked', 'blocked': 'blocked', 'owes_answers': 'blocked', 'on_task': 'in_progress', 'in_review': 'review', 'idle': 'open'}[a.state] }}">{{ a.state_label }}</span></span>
+        <span class="now-agent-why">{{ a.reason }}</span>
+        <span class="now-agent-last">{{ a.last_text }}</span></a></li>
+    {% endfor %}</ul>{% else %}<p class="empty">No agents in this session yet.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}
+

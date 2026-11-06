@@ -74,6 +74,8 @@ def take_lease(s: str, body: LeaseIn, key: str = Depends(idempotency_key),
         if tx.me["role"] == "observer":
             raise ApiError(403, "forbidden", "Observers may read but not take leases.")
         require_state(tx.sess, "message")
+        from .api_holds import refuse_if_standing_down
+        refuse_if_standing_down(c, sid, p.id)
         held = c.execute("SELECT * FROM lease WHERE session_id=? AND resource=?", (sid, body.resource)).fetchone()
         if held is not None:
             if held["holder_id"] == p.id:

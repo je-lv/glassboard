@@ -93,6 +93,11 @@ class Sweeper:
                 expire_leases(self.database)
             except Exception:
                 log.exception("lease expiry failed")
+            try:
+                from .api_holds import expire_holds
+                expire_holds(self.database)
+            except Exception:
+                log.exception("hold expiry failed")
 
     def stop(self) -> None:
         self._stop.set()

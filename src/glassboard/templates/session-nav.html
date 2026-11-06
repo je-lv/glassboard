@@ -1,0 +1,21 @@
+{# Session navigation: tabs with number keys (keys.js), count badges, search and the live indicator. #}
+{% set nb = nav_badges(sess, viewer) %}
+{% set tabs = [("now", "Now", "/now"), ("timeline", "Timeline", ""), ("conversations", "Conversations", "/conversations"),
+               ("board", "Board", "/board"), ("progress", "Progress", "/progress"), ("artifacts", "Artifacts", "/artifacts")] %}
+{% if experimental_ui %}{% set tabs = tabs + [("observe", "Observe", "/observe")] %}{% endif %}
+<nav class="subnav" aria-label="session">
+  {% for key, label, path in tabs %}<a class="tab{% if nav_active == key %} on{% endif %}" href="/s/{{ sess.handle }}{{ path }}" data-key="{{ loop.index }}"{% if nav_active == key %} aria-current="page"{% endif %}><span class="tab-key" aria-hidden="true">{{ loop.index }}</span>{{ label }}{% if nb.get(key) %} <span class="tab-badge" title="{{ nb[key] }} need{{ 's' if nb[key] == 1 }} attention">{{ nb[key] }}</span>{% endif %}</a>{% endfor %}
+  {% if can_coordinate %}<a class="tab" href="/s/{{ sess.handle }}/new-task">New task</a>{% endif %}
+  <span class="spacer"></span>
+  <span class="live-indicator" data-live hidden></span>
+  <button type="button" class="small secondary jump-open" data-jump-open aria-keyshortcuts="Control+K Meta+K">Jump <kbd aria-hidden="true">Ctrl K</kbd></button>
+  <form method="get" action="/s/{{ sess.handle }}/search" class="nav-search" role="search">
+    <input name="q" type="search" maxlength="200" placeholder="Search  ( / )" aria-label="Search this session (press / to jump here)" data-search-box value="{{ search_q or '' }}">
+  </form>
+</nav>
+<dialog id="jump-dialog" class="jump-dialog" aria-label="Jump to a view, task or member" data-jump-src="/s/{{ sess.handle }}/jump.json">
+  <input type="search" id="jump-input" name="jump" placeholder="Jump to a view, task or member" aria-label="Jump to" data-jump-input role="combobox" aria-controls="jump-list" aria-expanded="true" autocomplete="off">
+  <ul id="jump-list" class="jump-list" role="listbox" data-jump-list></ul>
+  <p class="jump-help">Up and down to move · Enter to open · Esc to close · number keys 1 to {{ tabs|length }} open the tabs · / searches</p>
+</dialog>
+<script src="/static/keys.js"></script>

@@ -166,7 +166,8 @@ _DATA_ORDER = [
     ("verdict", "inline"), ("effort_min", "inline"), ("resource", "inline"),
     ("status", "inline"), ("issues", "inline"), ("preflight_seq", "inline"),
     ("draft_sha256", "inline"), ("redacted", "inline"), ("adapter", "inline"), ("generation", "inline"),
-    ("wake_gen", "inline"), ("exited", "inline"), ("holding", "inline"),
+    ("wake_gen", "inline"), ("exited", "inline"), ("holding", "inline"), ("trigger", "inline"), ("client", "inline"),
+    ("decision", "inline"), ("default", "inline"), ("deadline_at", "inline"), ("quiet", "inline"), ("urgent", "inline"), ("members", "inline"),
     ("checklist", "items"), ("drafts", "drafts"), ("standup", "standup"), ("handoff_fields", "handoff"),
     ("scope", "block"), ("reason", "block"), ("note", "block"), ("handoff", "block"),
     ("feedback", "block"), ("blockers", "block"),
@@ -180,6 +181,12 @@ def event_lines(ev: dict) -> list[str]:
     lines = [header_line(ev["seq"], ev["ts"], ev["actor"], ev["type"], runtime=ev.get("runtime"),
                          broadcast=bool(ev.get("broadcast")), recipients=list(ev.get("recipients") or ()),
                          task_num=ev.get("task_num"), gen=data.get("gen"), reply_to=ev.get("reply_to"))]
+    if ev.get("channel"):                                        # B55: server-checked name, not participant text
+        lines.append(inline_line("channel", "#" + ev["channel"]))
+    read = ev.get("read")
+    if read is not None:                                         # B54: server-computed, never participant text
+        lines.append(inline_line("had read through", "unknown" if read == "unknown"
+                                 else f"#{read['delivered']} (acknowledged #{read['acked']})"))
     for key, kind in _DATA_ORDER:
         if data.get(key) is None:
             continue

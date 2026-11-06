@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "evline.html" import evrow %}
+{% block title %}Search · {{ sess.handle }} · Glassboard{% endblock %}
+{% block main %}
+<section class="head"><h1>{{ sess.handle }} · search</h1>
+  <p class="muted">Message text, task titles, summaries, reasons, feedback and handoffs in this session. Every word must appear.</p></section>
+{% set nav_active = "search" %}{% include "session-nav.html" %}
+{% if not searched %}<p class="empty">Type a few words in the search box.</p>
+{% else %}
+<section class="card" aria-labelledby="st-h"><h2 id="st-h">Tasks <span class="count">{{ tasks|length }}</span></h2>
+  {% if tasks %}<ul class="list">{% for t in tasks %}<li class="item"><div class="item-main"><div class="item-head"><a class="item-title" href="/s/{{ sess.handle }}/t/{{ t.task }}" data-task-modal>T{{ t.task }}</a> <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></div><p class="item-body">{{ t.title_line }}</p></div></li>{% endfor %}</ul>
+  {% else %}<p class="muted">No task matches.</p>{% endif %}</section>
+<section class="card" aria-labelledby="se-h"><h2 id="se-h">Events <span class="count">{{ events|length }}{% if more %}+{% endif %}</span></h2>
+  {% if events %}<div class="ev-rows">{% for ev in events %}{{ evrow(ev, sess.handle) }}{% endfor %}</div>
+  {% if more %}<p class="muted small-text">Showing the newest 50; add a word to narrow it.</p>{% endif %}
+  {% else %}<p class="muted">No event matches.</p>{% endif %}</section>
+{% endif %}
+{% endblock %}
+

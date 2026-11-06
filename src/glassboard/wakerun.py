@@ -249,6 +249,7 @@ def _loop(ctx, a, me: str, prompt: str, extra: list[str]) -> int:
     dispatched: list[float] = []
     idle = 0
     held: int | None = None                                          # generation held at the last check
+    quiet_until: str | None = None                                   # B56: logged once per quiet period
     while True:
         s = _status(ctx, wait=25) if held is None else _status(ctx, wait=max(1, int(a.recheck)), after=held)
         if s["supervisor"]["state"] == "none":
@@ -261,6 +262,14 @@ def _loop(ctx, a, me: str, prompt: str, extra: list[str]) -> int:
         if s["supervisor"]["state"] == "paused" or s["session_state"] == "paused":
             _status(ctx, wait=25, after=s["generation"])             # demand stays pending: wait, do not spin
             continue
+        q = s.get("quiet")
+        if q and q.get("blocks_dispatch"):                            # B56: demand waits for the window to end
+            if quiet_until != q["until"]:
+                _log(f"quiet hours until {q['until']}: pending demand waits and goes out once, coalesced")
+                quiet_until = q["until"]
+            _status(ctx, wait=25, after=s["generation"])
+            continue
+        quiet_until = None
         if held is None:
             time.sleep(a.debounce)                                   # let a burst coalesce
             s = _status(ctx)

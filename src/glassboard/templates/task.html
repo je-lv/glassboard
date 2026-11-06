@@ -6,16 +6,27 @@
 <p class="crumb"><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> / <a href="/s/{{ sess.handle }}/board">board</a> / T{{ t.task }}</p>
 <section class="head"><h1><span class="task-num">T{{ t.task }}</span> <span class="task-title">{{ title_line }}</span> <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span>{% if t.stale %} <span class="tag stale">stale</span>{% endif %}</h1>
 <p class="meta"><span class="facts">g{{ t.gen }} · v{{ t.version }} · <span class="prio-{{ t.priority }}">{{ t.priority }}</span></span> {% if t.claimant %}claimant @{{ t.claimant }}{% if t.claimant_runtime %} ({{ t.claimant_runtime }}){% endif %} · {% endif %}{% if t.assignee %}assignee @{{ t.assignee }} · {% endif %}created by @{{ t.created_by }}{% if t.activity_age_s is not none %} · activity {{ t.activity_age_s|ago }}{% endif %} {% if t.status in ("in_progress", "blocked") %} · stale after {{ t.effective_stale_after_s // 60 }}m{% endif %}</p></section>
+<p class="task-actions-top"><a class="button small secondary" href="/s/{{ sess.handle }}/t/{{ t.task }}/replay">Replay this task</a></p>
 <p class="note">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment since {{ t.assignment_age_s|ago }}{% endif %}</p>
 {% if t.ack_overdue %}<p class="note">{% if t.assignee_synced_since_assignment %}Assignee has synced with this board since assignment, but has not acknowledged T{{ t.task }}.{% else %}No board sync recorded for the assignee since assignment.{% endif %}{% if can_coordinate %} Check with the assignee or reassign the task if needed.{% endif %}</p>{% endif %}
 {% if t.summary_needs_detail %}<p class="alert">The submitted summary does not explain the result. Read the history and ask for a fuller handoff before acceptance.</p>{% endif %}
+{% if t.verification %}{% set v = t.verification %}{% set st = v.steps %}
+<section class="card verification" aria-labelledby="verif-h"><h2 id="verif-h">Verification {% if v.verified %}<span class="tag st st-done">verified</span>{% elif v.gaps %}<span class="tag st st-blocked">{{ v.gaps|length }} gap{{ "s" if v.gaps|length != 1 }}</span>{% endif %}</h2>
+  <ol class="verif-steps">
+    <li class="{{ 'ok' if st.submitted else 'missing' }}"><strong>Submitted</strong> {% if st.submitted %}<a href="#e{{ st.submitted.seq }}">#{{ st.submitted.seq }}</a>{% if st.submitted.commit %} · <code>{{ st.submitted.commit[:12] }}</code>{% endif %} · tests {{ st.submitted.tests.pass }} pass, {{ st.submitted.tests.fail }} fail, {{ st.submitted.tests.skipped }} skipped{% else %}not recorded{% endif %}</li>
+    <li class="{{ 'ok' if st.reviewed and st.reviewed.verdict == 'approve' else 'missing' }}"><strong>Reviewed</strong> {% if st.reviewed %}<a href="#e{{ st.reviewed.seq }}">#{{ st.reviewed.seq }}</a> by <span class="handle">@{{ st.reviewed.by }}</span> · {{ st.reviewed.verdict }}{% else %}not this submission{% endif %}</li>
+    <li class="{{ 'ok' if st.accepted else 'missing' }}"><strong>Accepted</strong> {% if st.accepted %}<a href="#e{{ st.accepted.seq }}">#{{ st.accepted.seq }}</a> by <span class="handle">@{{ st.accepted.by }}</span>{% if st.accepted.by_kind != 'human' %} (agent){% endif %}{% else %}not yet{% endif %}</li>
+  </ol>
+  {% if v.gaps %}<ul class="verif-gaps">{% for g in v.gaps %}<li>{{ g }}</li>{% endfor %}</ul>{% endif %}
+</section>
+{% endif %}
 {% if t.submission %}
 <section class="card submission-evidence">
   <h2>Current submission <a href="#e{{ t.submission.seq }}">#{{ t.submission.seq }}</a></h2>
   {% if t.submission.commit %}<p>{{ hash(t.submission.commit, "commit-" ~ t.task, "Git commit") }}</p>{% endif %}
   {% if t.submission.tests %}<h3>Recorded tests</h3><ul>{% for test in t.submission.tests %}<li><span class="tag st st-{{ 'done' if test.outcome == 'pass' else ('cancelled' if test.outcome == 'fail' else 'open') }}">{{ test.outcome }}</span> <code>{{ test.command }}</code>{% if test.detail %} · {{ test.detail }}{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% if t.submission.incomplete_checklist_reason %}<p class="alert"><strong>Incomplete checklist override:</strong> {{ t.submission.incomplete_checklist_reason }}</p>{% endif %}
-  {% if t.review %}<p><strong>Peer review</strong> #{{ t.review.seq }} by <span class="handle">@{{ t.review.by }}</span> · {{ t.review.verdict }} · bound to submission #{{ t.review.submission_seq }}{% if t.review.commit %} at <code>{{ t.review.commit }}</code>{% endif %}</p>{% endif %}
+  {% if t.review %}<p><strong>Peer review</strong> #{{ t.review.seq }} by <span class="handle">@{{ t.review.by }}</span> · {{ t.review.verdict }}{% if t.review.submission_seq %} · bound to submission #{{ t.review.submission_seq }}{% else %} · not bound to a submission{% endif %}{% if t.review.commit %} at <code>{{ t.review.commit }}</code>{% endif %}</p>{% endif %}
 </section>
 {% endif %}
 {% if artifacts %}

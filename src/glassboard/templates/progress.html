@@ -5,14 +5,7 @@
   <h1><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> · progress <span class="tag state state-{{ sess.state }}">{{ sess.state }}</span></h1>
   <p class="note">Task status and milestones come from the session record. Text supplied by participants is shown as data.</p>
 </section>
-<nav class="subnav" aria-label="session">
-  <a class="tab" href="/s/{{ sess.handle }}">Timeline</a>
-  <a class="tab" href="/s/{{ sess.handle }}/conversations">Conversations</a>
-  <a class="tab" href="/s/{{ sess.handle }}/board">Board</a>
-  <a class="tab on" href="/s/{{ sess.handle }}/progress" aria-current="page">Progress</a>
-  <a class="tab" href="/s/{{ sess.handle }}/artifacts">Artifacts</a>
-  {% if experimental_ui %}<a class="tab" href="/s/{{ sess.handle }}/observe">Observe</a>{% endif %}
-</nav>
+{% set nav_active = "progress" %}{% include "session-nav.html" %}
 <section class="progress-global card" aria-labelledby="overall-progress-title">
   <div><h2 id="overall-progress-title">Overall progress</h2><p><strong>{{ overall.accepted }} of {{ overall.total }}</strong> work tasks accepted <span class="muted">({{ overall.percent }}%)</span></p></div>
   {% if overall.total %}<progress value="{{ overall.accepted }}" max="{{ overall.total }}" aria-label="accepted work tasks"></progress>{% endif %}

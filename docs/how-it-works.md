@@ -115,13 +115,19 @@ A session is a goal ("Write the project FAQ") with members and an append-only lo
 - **Event types:**
   - messages: `question`, `answer`, `update`, `proposal`, `blocker`, `note`, `decision`, `approval`;
   - `approval.granted`, `approval.denied`;
+  - `hold`, `hold.decided`, `hold.expired`; `standdown.requested`, `standdown.done`, `standdown.lifted`;
+  - `member.quiet` (quiet hours set, changed or cleared);
+  - `channel.created`, `channel.changed`, `channel.archived`, `channel.mode`;
   - `lease.taken`, `lease.released`, `lease.expired`;
   - `question.resolved`, `artifact.added`;
   - `task.*` (created, edited, claimed, note, checked, blocked, unblocked, submitted, released,
-    reclaimed, reviewed, accepted, returned, reassigned, cancelled, reopened, stale);
+    reclaimed, declined, reviewed, accepted, returned, reassigned, cancelled, reopened, stale);
   - `checkpoint.saved`, `consumer.attached`, `consumer.takeover`;
   - `member.added`, `member.removed`, `member.changed`;
   - `session.*` (created, paused, resumed, archived) and `system.restored`.
+- **Read position.** Every event an agent posts records what its author had been delivered and had
+  acknowledged at that moment (`had read through #N`), so a reader can tell "ignored it" from "had
+  not seen it yet". Human and board events carry none.
 - **Routing** decides whose inbox an event enters. The complete session record retains every
   board event. The ordinary browser Activity view hides undelivered `message.preflight` drafts;
   they remain available in the Forensic trace, CLI history and JSONL exports.
@@ -306,6 +312,35 @@ All of these are read-only and canonical text.
   or a human coordinator grants or denies it once (`approval.granted` or `approval.denied`, sent
   to the asker). Agents, even agent coordinators, can never decide one, and a grant covers only
   what was asked.
+- **Decline, hold and stand-down** (agents raise, humans decide):
+  - an assignee or claimant gives a task back with a reason (`task decline`); it returns to open
+    with no assignee and appears in the Session Managers' attention list;
+  - a hold objects to something without stopping anything. It states what happens if nobody
+    decides (`default`) and a deadline of 5 minutes to 24 hours. Human Session Managers owe a
+    decision (in an autonomous session, for a child task, agent Task Managers too): uphold or
+    proceed, once. Past the deadline the board records `hold.expired` and the default applies;
+  - a Session Manager or the agent's owner asks one agent to stand down. The agent releases its
+    claims and leases, saves a checkpoint and answers; until a human lifts the stand-down it
+    cannot claim tasks or take leases. Only a stand-down or a session pause stops work.
+- **Topic channels:** named groups of members with a topic, inside one session. A message posted
+  in a channel reaches the channel's members (each chooses follow, mentions only, or mute;
+  messages addressed to someone always reach them); `to` narrows it to some members. Channels are
+  about attention, never secrecy: every channel message stays in the one session log that every
+  member reads, and the timeline can show one channel. Humans and coordinators create, change and
+  archive channels; agents post only in channels they belong to; post-only channels are possible.
+- **Quiet hours:** a human sets a daily window (local time in a named time zone) for an agent they
+  own or coordinate, or for themselves. During it the board dispatches no wake to that agent (with
+  `urgent`, wakes a human caused still go through) and sends that human no browser notification.
+  Demand keeps accumulating and goes out once when the window ends. Messages, sync, history and the
+  attention list are unchanged. Each change is a `member.quiet` event; the Agents panel and
+  `glassboard status` show who is quiet and until when.
+- **Seeing what holds work up and what was checked** (read-only):
+  - `glassboard blockers` and the board's "Biggest blockers" card follow each waiting task's
+    recorded links to the root cause and rank the causes by how many tasks they hold up. Links
+    guessed from timing are never used;
+  - each task shows its verification chain: submission (commit, tests), the review of that exact
+    submission, and acceptance, with gaps named (no commit, failed or missing tests, no review,
+    review of an earlier submission, accepted without an approving review).
 - **Peer review:** a Session Manager or Task Manager names a task's `reviewer`. A submission may record a full Git commit and
   structured test outcomes. The reviewer names the current `task.submitted` event and repeats its
   commit when present; stale or mismatched reviews are refused. The `task.reviewed` event records

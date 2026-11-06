@@ -71,6 +71,7 @@ class MessageIn(StrictModel):
     drafts: list[Draft] = Field(default_factory=list, max_length=MAX_DRAFTS)
     standup: Standup | None = None
     preflight_seq: StrictInt | None = Field(default=None, ge=1)
+    channel: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{0,31}$")    # B55: a topic channel
 
     @field_validator("body")
     @classmethod
@@ -149,6 +150,9 @@ def _validate_message(c, sid: str, p: tokens.Principal, role: str, body: Message
                        details={"fields": [{"loc": ["body", "drafts"], "type": "not_allowed_for_kind"}]})
     if body.kind == "decision" and (p.kind != "human" or role != "coordinator"):
         raise ApiError(403, "forbidden", "Only a human coordinator may post a decision.")
+    if body.channel is not None:
+        from .api_channels import check_post
+        check_post(c, sid, p, body.channel, to_ids)
     return to_ids
 
 
@@ -267,6 +271,8 @@ def send_message(database: db.Database, post_limiter, p: tokens.Principal, s: st
             payload["standup"] = body.standup.model_dump()
         if body.preflight_seq is not None:
             payload["preflight_seq"] = body.preflight_seq
+        if body.channel is not None:                                      # absent: digests stay as before
+            payload["channel"] = body.channel
         replayed = tx.replay(key, "POST /sessions/{s}/messages", payload, status=201)
         if replayed is not None:
             return replayed
@@ -293,8 +299,14 @@ def send_message(database: db.Database, post_limiter, p: tokens.Principal, s: st
         if body.preflight_seq is not None:
             data["preflight_seq"] = body.preflight_seq
         data = data or None
+        aud = None
+        if body.channel is not None:
+            from .api_channels import audience
+            aud = audience(c, sid, body.channel, p.id, body.re)
         seq, text = tx.event(body.kind, body=body.body, data=data, task_num=body.task, reply_to=body.re, to=to_ids,
-                             receipt=lambda seq: {"session": tx.sess["handle"], "seq": seq, "type": body.kind})
+                             channel=body.channel, audience=aud,
+                             receipt=lambda seq: {"session": tx.sess["handle"], "seq": seq, "type": body.kind,
+                                                  **({"channel": body.channel} if body.channel else {})})
     board_ops.after_write(database, sid, seq)
     return respond(text, 201)
 
@@ -395,6 +407,7 @@ def _resolved_all(c, sid: str, q_seq: int) -> bool:
 def history(s: str, request: Request, after: int = Query(0, ge=0), before: int | None = Query(None, ge=1),
             task: str | None = Query(None, max_length=12), thread: int | None = Query(None, ge=1),
             actor: str | None = Query(None, max_length=80), type: str | None = Query(None, max_length=40),
+            channel: str | None = Query(None, max_length=32),
             to: Literal["me"] | None = Query(None), limit: int = Query(50, ge=1, le=100),
             format: Literal["json", "text"] = Query("json"),
             p: tokens.Principal = Depends(authenticate), database: db.Database = Depends(get_db)):
@@ -417,6 +430,8 @@ def history(s: str, request: Request, after: int = Query(0, ge=0), before: int |
             where.append("e.actor_id = (SELECT id FROM principal WHERE handle = :actor)"); args["actor"] = actor
         if type is not None:
             where.append("e.type = :type"); args["type"] = type
+        if channel is not None:
+            where.append("e.channel = :channel"); args["channel"] = channel
         if to == "me":
             where.append("e.actor_id != :p AND (EXISTS (SELECT 1 FROM event_recipient r WHERE r.session_id = e.session_id "
                          "AND r.seq = e.seq AND r.principal_id = :p) OR (e.broadcast = 1 AND e.seq > :joined))")

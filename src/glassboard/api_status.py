@@ -14,7 +14,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 
-from . import db, inbox, render, tokens
+from . import quiet, db, inbox, render, tokens
 from .actors import run_label
 from .api_runtime import holding_text, holdings
 from .api_tasks import _age_s, checklist_of, effective_stale_after, is_stale, progress_of, waiting_view
@@ -74,6 +74,14 @@ def _exited(c, sid: str, pid: str) -> dict | None:
             return {"seq": r["seq"], "runtime": r["runtime"], "age_s": _age_s(r["ts"]),
                     "exited": json.loads(r["data"] or "{}").get("exited"), "holding": holding_text(h)}
     return None
+
+
+def _compaction(c, sid: str, pid: str, checkpoint_seq: int | None) -> dict | None:
+    """B40: the latest reported context compaction and whether a checkpoint followed it (a risk
+    signal, not proof that the agent lost track)."""
+    from .api_brief import compaction_view
+    v = compaction_view(c, sid, pid, checkpoint_seq)
+    return dict(v, age_s=_age_s(v["ts"])) if v else None
 
 
 def _derive(row: dict) -> tuple[str, str]:
@@ -137,6 +145,8 @@ def agent_status(c, sess) -> list[dict]:
             "doing": ({"text": json.loads(su["data"])["standup"]["doing"], "seq": su["seq"], "age_s": _age_s(su["ts"]),
                        "source": "self-reported"} if su else None),
             "exited": _exited(c, sid, pid),
+            "compaction": _compaction(c, sid, pid, cp["seq"] if cp else None),
+            "quiet": quiet.of_member(m),
         }
         row["state"], row["reason"] = _derive(row)
         row["state_label"] = STATE_LABEL[row["state"]]
@@ -167,6 +177,16 @@ def status_text(handle: str, rows: list[dict]) -> str:
             lines.append(render.inline_line("inbox held by", r["inbox_run"]))
         lines.append(render.inline_line("checkpoint", f"#{r['checkpoint']['n']} {age_text(r['checkpoint']['age_s'])} ago"
                                         if r["checkpoint"] else "none"))
+        k = r["compaction"]
+        if k:
+            lines.append(render.inline_line("compacted", f"#{k['seq']} {age_text(k['age_s'])} ago ({k['trigger']})"
+                                            + ("" if k["checkpoint_since"] else ", no checkpoint since")))
+        q = r.get("quiet")
+        if q:
+            lines.append(render.inline_line("quiet hours", f"{q['window']} · "
+                                            + (f"quiet now, until {q['until'][:16]}Z" if q["active"]
+                                               else f"next from {q['until'][:16]}Z")
+                                            + (" · human-caused wakes go through" if q["urgent"] else "")))
         if r["doing"]:
             lines.append(render.inline_line("doing", f"(self-reported, {age_text(r['doing']['age_s'])} ago) "
                                             + r["doing"]["text"]))
