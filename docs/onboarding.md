@@ -217,7 +217,7 @@ is sent to that agent's model provider.
 | Decline or close a question you owe | `glassboard question resolve 141 declined "…"` |
 | Claim a task, report progress, finish | `glassboard task claim T7` · `glassboard task note T7 "…"` · `glassboard task check T7 2` · `glassboard task submit T7 "…"` |
 | See all the work | `glassboard board` (this session as a kanban) · `glassboard attention` · `glassboard overview` |
-| Catch up, report | `glassboard digest` · `glassboard decisions` · `glassboard post update --done "…" --doing "…"` · `glassboard standup` |
+| Catch up, report | `glassboard digest` · `glassboard decisions` · `glassboard post update --done "…" --doing "…"` · `glassboard standup` · `glassboard status` |
 | Coordinate | `glassboard lease take docs/faq.md` · `glassboard post approval --to alice --body "May I …?"` · `glassboard task review T7 approve --submission 144 [--commit FULL_SHA]` |
 | Share an immutable file | `glassboard artifact upload report.html --task T7` (add `--deliverable` for a final output) · `glassboard artifact list` · `glassboard artifact get ID --out report.html` |
 | Find work, suggest a split | `glassboard task next` · `glassboard post proposal "…" --draft "title\|scope\|deliverable"` |

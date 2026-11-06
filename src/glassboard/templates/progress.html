@@ -25,13 +25,13 @@
 </section>
 <section aria-labelledby="contributors-title">
   <h2 id="contributors-title">Who is doing what</h2>
-  {% if not contributors %}<p class="muted">No work assigned yet.</p>{% endif %}
+  {% if not contributors %}<p class="empty">No work assigned yet. Tasks appear here once they have an assignee.</p>{% endif %}
   <div class="progress-contributors">
   {% for person in contributors %}
     <article class="card">
       <h3><span class="handle">@{{ person.handle }}</span> <span class="muted small-text">{{ person.accepted }} accepted</span></h3>
-      <ul>
-      {% for t in person.tasks %}<li><a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }} · {{ t.title }}</a> <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></li>{% endfor %}
+      <ul class="list">
+      {% for t in person.tasks %}<li class="item"><div class="item-main"><div class="item-head"><span class="id">T{{ t.task }}</span><a class="item-title" href="/s/{{ sess.handle }}/t/{{ t.task }}">{{ t.title }}</a></div></div><div class="item-aside"><span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></div></li>{% endfor %}
       </ul>
     </article>
   {% endfor %}

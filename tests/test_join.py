@@ -239,7 +239,8 @@ def test_dashboard_add_agent_shows_the_join_steps_once(b):
     session = c.get("/s/s1").text
     assert "Invited · not connected" in session
     assert f"glassboard join https://testserver {code}" in r.text and f"{code} -- claude" in r.text
-    assert re.findall(r"<script[^>]*>", r.text) == ['<script src="/static/copy.js">', '<script src="/static/notify.js">']
+    assert re.findall(r"<script[^>]*>", r.text) == ['<script src="/static/notify.js">', '<script src="/static/confirm.js">',
+                                                    '<script src="/static/copy.js">']
     assert " style=" not in r.text and "onclick" not in r.text
     again = c.post("/s/s1/invite", data=form)                               # resubmitted form: never the code again
     assert again.status_code == 200 and code not in again.text and "already shown once" in again.text
@@ -305,12 +306,12 @@ def test_my_agents_page_creates_agents_and_revokes_tokens(b):
     cid = b.tok["jose/claude"].split("_")[1]
     assert f"<code>{cid}</code>" in html and b.tok["jose/claude"] not in html          # ids only, never secrets
     form = {"csrf": csrf_of(html), "op": "01JMYAGENTSAAAAAAAAAAAAAAA", "action": "create", "name": "reviewer"}
-    assert c.post("/agents", data=form).headers["location"] == "/agents"
+    assert c.post("/agents", data=form).headers["location"] == "/agents?ok=agent_created"
     assert "@jose/reviewer" in c.get("/agents").text
     r = c.post("/agents", data={**form, "op": "01JMYAGENTSBBBBBBBBBBBBBBB"})
     assert r.headers["location"].endswith("err=handle_taken")
     r = c.post("/agents", data={"csrf": form["csrf"], "op": "01JMYAGENTSCCCCCCCCCCCCCCC", "action": "revoke", "credential": cid})
-    assert r.status_code == 303 and r.headers["location"] == "/agents"
+    assert r.status_code == 303 and r.headers["location"] == "/agents?ok=token_revoked"
     assert b.client.get("/api/v1/whoami", headers={"Authorization": f"Bearer {b.tok['jose/claude']}"}).status_code == 401
     # someone else's credential is not revealed, and a malformed id never reaches the database
     ana_cid = b.tok["ana/codex"].split("_")[1]

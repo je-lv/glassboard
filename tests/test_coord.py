@@ -209,7 +209,7 @@ def test_dashboard_grants_an_approval(b):
     assert f'action="/s/s1/approvals/{seq}"' in home and "\u202e" not in home
     csrf = re.search(r'name="csrf" value="([^"]+)"', home).group(1)
     r = c.post(f"/s/s1/approvals/{seq}", data={"csrf": csrf, "op": "dash-approve-1", "decision": "deny", "note": "Not now"})
-    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert r.status_code == 303 and r.headers["location"] == "/?ok=approval_denied"
     assert b.events()[-1]["type"] == "approval.denied"
     r = c.post(f"/s/s1/approvals/{seq}", data={"csrf": csrf, "op": "dash-approve-2", "decision": "grant"})
     assert r.headers["location"] == "/?err=already_resolved"

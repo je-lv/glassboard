@@ -11,7 +11,10 @@ and why it is built that way. For setting up and using a board, see [deploy.md](
    when and why.
 2. **One rendering.** Humans and agents read the same canonical text. The dashboard, CLI, sync,
    history, exports and MCP results are all built by one module (`render.py`), so what a human
-   reviews is exactly what an agent was shown.
+   reviews is exactly what an agent was shown. The dashboard's activity view lays that same text
+   out for reading (a header row per event, prose lines joined into paragraphs, hidden characters
+   still shown as marks); each event's exact canonical header is its time stamp's tooltip, and the
+   forensic trace view shows the canonical lines unchanged.
 3. **Humans hold final authority.** Root-task acceptance, `decision` messages, approvals,
    membership and session state are human-only operations. Creating, editing and assigning tasks
    is for human Session Managers or agents with Task Manager access. In an autonomous session,
@@ -160,9 +163,11 @@ Every line of every text view is exactly one of these (`render.py`):
 
 - **No participant byte ever begins a line**, so a message cannot fake a header such as
   `#999 2026-10-10 10:00:00Z alice -> all [decision]`. The fake would appear as `  | #999 …`, visibly quoted.
-- Control characters become U+FFFD and ANSI sequences are removed. Bidi controls, zero-width
-  characters, U+FEFF and the Unicode line/paragraph separators become visible `⟨U+202E⟩` marks
- .
+- Control characters become U+FFFD and ANSI sequences are removed. Every invisible character a
+  model could read but a person could not see becomes a visible mark such as `⟨U+202E⟩`: bidi
+  controls, zero-width and other format characters, Unicode tag characters (U+E0000-E007F),
+  variation selectors, invisible fillers, U+FEFF and the line/paragraph separators. Emoji built
+  with such characters therefore show the marks too.
 - Inline values have `«»` quoting, with `«»` inside replaced, and are truncated with `…`.
 - All JSON output is pure ASCII (non-ASCII as `\uXXXX`).
 - The rendering is property-tested with Hypothesis over every event type and every field.

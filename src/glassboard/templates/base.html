@@ -37,11 +37,23 @@
   <button type="button" id="dismiss-read-only" aria-label="Dismiss read-only notice" title="Dismiss for this tab">×</button>
 </div>
 {% endif %}
+{% if flash %}
+<div class="toasts" id="toasts" data-clean="{{ flash.clean }}">
+  {% if flash.err %}<div class="toast toast-err" role="alert"><span class="toast-mark" aria-hidden="true">!</span><span class="toast-text">{{ flash.err }}</span><a class="toast-close" href="{{ flash.clean }}" aria-label="Dismiss">×</a></div>{% endif %}
+  {% if flash.ok %}<div class="toast toast-ok" role="status"><span class="toast-mark" aria-hidden="true">✓</span><span class="toast-text">{{ flash.ok }}</span><a class="toast-close" href="{{ flash.clean }}" aria-label="Dismiss">×</a></div>{% endif %}
+</div>
+{% endif %}
 <main>
 {% block main %}{% endblock %}
 </main>
+{% if viewer %}<dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-dialog-title">
+  <h2 id="confirm-dialog-title">Confirm</h2>
+  <p data-confirm-text></p>
+  <div class="confirm-actions"><button type="button" data-confirm-keep>Keep as is</button><button type="button" class="danger" data-confirm-go>Confirm</button></div>
+</dialog>{% endif %}
 {% block scripts %}{% endblock %}
 {% if plain_http or (viewer and viewer.p.scope == "read") %}<script src="/static/banner.js"></script>{% endif %}
-{% if viewer %}<script src="/static/notify.js"></script>{% endif %}
+{% if viewer %}<script src="/static/notify.js"></script><script src="/static/confirm.js"></script><script src="/static/copy.js"></script>{% endif %}
+{% if flash %}<script src="/static/toast.js"></script>{% endif %}
 </body>
 </html>

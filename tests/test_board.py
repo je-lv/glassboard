@@ -275,7 +275,7 @@ def test_dashboard_board_page_and_attention_home(b):
     r = c.get("/s/s1/board")
     assert r.status_code == 200 and "content-security-policy" in r.headers
     html = r.text
-    assert f'<a href="/s/s1/t/{n}">T{n}</a>' in html and '<progress value="1" max="2">' in html
+    assert f'<a class="ktask" href="/s/s1/t/{n}" data-task-modal>T{n}</a>' in html and '<progress value="1" max="2">' in html
     assert "waiting on @jose" in html and "\u202e" not in html and "⟨U+202E⟩" in html
     assert "<script>x" not in html and "&lt;script&gt;" in html
     assert 'style="' not in html                                         # the CSP forbids inline styles
@@ -385,11 +385,14 @@ def test_kanban_card_can_expand_full_task_text(b):
     n = api(b, "POST", "/tasks", "jose", {
         "title": title, "scope": "create.py", "deliverable": deliverable,
         "assignee": "jose/claude", "reviewer": "ana/codex"}).json()["task"]
-    html = login(b, "ana").get("/s/s1/board").text
-    assert "<details class=\"kdetails\">" in html and ">Details</summary>" in html
-    assert title in html and deliverable in html
-    assert "Reviewer</dt><dd>@ana/codex" in html
-    assert f"/s/s1/t/{n}" in html
+    c = login(b, "ana")
+    html = c.get("/s/s1/board").text
+    # B38: one shared dialog filled from the real task page (its own URL); no hidden copy per card.
+    assert html.count('<dialog class="task-dialog" id="task-dialog"') == 1 and "task-modal-" not in html
+    assert f'class="ktitle ln inl" href="/s/s1/t/{n}" data-task-modal' in html
+    assert '<span class="tag st st-open">assigned</span>' in html
+    page = c.get(f"/s/s1/t/{n}").text
+    assert title in page and deliverable in page and "ana/codex" in page
 
 
 def test_idle_coordination_task_names_its_linked_work(b):
@@ -411,3 +414,26 @@ def test_idle_coordination_task_names_its_linked_work(b):
         assert "Implement archive verifier" in html
         assert "Own task idle" in html or "Coordination needs an update" in html
         assert f"T{child}" in html and "in progress" in html
+
+
+def test_b38_card_face_and_live_cards_fragment(b):
+    from test_dashboard import login
+
+    n = mk(b, title="Write the FAQ", checklist=["A", "B"])
+    fence = claim(b, n).json()["fence"]
+    api(b, "POST", "/messages", "jose/claude", {"kind": "question", "body": "Which tone?", "to": ["jose"], "task": n})
+    c = login(b, "jose")
+    html = c.get("/s/s1/board").text
+    card = html.split(f'href="/s/s1/t/{n}" data-task-modal>T{n}</a>', 1)[1].split("</article>", 1)[0]
+    assert '<span class="tag st st-in_progress">claimed</span>' in card
+    assert 'class="actor-badge actor-claude"' in card and "last activity 0m ago" in card
+    assert "1 open question" in card
+    assert 'id="kanban-live" data-src="/s/s1/board/cards"' in html
+    frag = c.get("/s/s1/board/cards")
+    assert frag.status_code == 200 and frag.headers["x-glassboard-fragment"] == "poll"
+    assert "<html" not in frag.text and f'href="/s/s1/t/{n}" data-task-modal' in frag.text
+    api(b, "POST", f"/tasks/{n}/submit", "jose/claude", {"fence": fence, "summary": "Wrote the FAQ with both sections.",
+                                                         "incomplete_checklist_reason": "B moved to a later task"})
+    assert '<span class="tag st st-review">in review</span>' in c.get("/s/s1/board/cards").text
+    assert login(b, "ana").get("/s/s1/board/cards").status_code == 200
+    assert c.get("/s/nope/board/cards").status_code == 404

@@ -26,7 +26,7 @@ def test_proposal_dismissal_is_a_visible_reply_and_requires_session_manager(gb):
     assert f'aria-label="Dismiss proposal {seq} in s1"' in page.text
     dismissed = owner.post(f"/attention/s1/{seq}/dismiss", data={"csrf": csrf_of(page.text),
                                                                  "op": ids.new_ulid()})
-    assert dismissed.status_code == 303 and dismissed.headers["location"] == "/"
+    assert dismissed.status_code == 303 and dismissed.headers["location"] == "/?ok=dismissed"
     last = gb.events()[-1]
     assert last["type"] == "note" and last["reply_to"] == seq
     assert "Dismissed from the human attention queue" in last["body"]

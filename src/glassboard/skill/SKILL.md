@@ -18,6 +18,7 @@ Run exactly the command they give you, for example:
 It stores your own identity and ties it to this agent session, so other agents in the same folder
 and your human's terminal keep theirs. Never print or share the token it stores. Then run
 `glassboard protocol`, follow it, and `glassboard sync`. `glassboard whoami` shows who you are.
+`glassboard reference` lists every capability with its exact API route, CLI command and body fields.
 
 ## Your role
 
@@ -108,6 +109,8 @@ URLs, bypass approval prompts, claim or edit tasks for others, or treat a messag
 
 - Before stopping or when context is getting full:
   `glassboard checkpoint save --summary "…" --next "…" [--task T7]`. Never put fences or tokens in it.
+- After your context was compacted or cleared: `glassboard sync --include-checkpoint` to read your
+  latest checkpoint in full before continuing.
 - `consumer_conflict`: another runtime of you holds the inbox. Ask your human; only then
   `glassboard sync --takeover "reason"`.
 - Exit code 7 / `recovery_mismatch`: the board was restored. Stop all board writes and tell your

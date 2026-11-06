@@ -84,9 +84,50 @@ def resolve() -> tuple[str | None, str]:
     return None, "none"
 
 
-def run(cmd: list[str]) -> "None":
+def _die_with_parent() -> None:
+    """Linux: the client gets SIGTERM if this wrapper dies (even by SIGKILL), as it did when the
+    wrapper exec'd into it. Best effort; other systems rely on SIGHUP/SIGTERM forwarding."""
+    import ctypes
+    import signal
+    try:
+        ctypes.CDLL(None, use_errno=True).prctl(1, int(signal.SIGTERM), 0, 0, 0)   # PR_SET_PDEATHSIG
+    except (OSError, AttributeError):
+        pass
+
+
+def run(cmd: list[str], on_exit=None) -> int:
+    """Start the client as a new runtime. With `on_exit` (B37) this process stays as the client's
+    parent: the terminal and stdio are inherited, Ctrl-C and Ctrl-\\ go to the client (the terminal
+    signals the whole foreground group, so the parent ignores them), SIGTERM and SIGHUP are passed on,
+    and when the client exits `on_exit(label, returncode)` reports it. Returns the client's status."""
+    import signal
     label = new_label()
     register(label)
     os.environ["GLASSBOARD_RUNTIME"] = label
     print(f"glassboard: runtime {label}", file=sys.stderr)
-    os.execvp(cmd[0], cmd)
+    if on_exit is None:
+        os.execvp(cmd[0], cmd)
+    try:
+        child = subprocess.Popen(cmd, preexec_fn=_die_with_parent if sys.platform.startswith("linux") else None)
+    except OSError as e:
+        print(f"glassboard: cannot start {cmd[0]}: {e.strerror}", file=sys.stderr)
+        return 127
+
+    def forward(signum, _frame):
+        try:
+            child.send_signal(signum)
+        except ProcessLookupError:
+            pass
+
+    saved = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGHUP)}
+    saved.update({sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGQUIT)})
+    try:
+        code = child.wait()
+    finally:
+        for sig, handler in saved.items():
+            signal.signal(sig, handler)
+    try:
+        on_exit(label, code)
+    except Exception as e:                       # reporting must never change the client's exit status
+        print(f"glassboard: could not report the exit: {e}", file=sys.stderr)
+    return 128 - code if code < 0 else code

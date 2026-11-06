@@ -12,7 +12,7 @@
     <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="recovery" value="{{ recovery }}"><input type="hidden" name="op" value="{{ op }}">
     <input type="hidden" name="kind" value="{{ draft.kind }}"><input type="hidden" name="to" value="{{ to_text }}"><input type="hidden" name="re" value="{{ re_text }}">
     <input type="hidden" name="preflight_seq" value="{{ outcome.seq }}"><textarea name="body" hidden>{{ draft.body }}</textarea>
-    <button type="submit">Send checked message</button>
+    <button type="submit" class="primary">Send checked message</button>
   </form>
   {% endif %}
   <p><a href="/s/{{ sess_handle }}">Back to timeline</a></p>

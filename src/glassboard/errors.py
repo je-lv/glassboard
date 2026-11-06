@@ -54,7 +54,17 @@ def envelope(request: Request, status: int, code: str, message: str, hint=None,
         return PlainTextResponse(text, status_code=status, headers=headers)
     if ("text/html" in request.headers.get("accept", "") and
             not request.url.path.startswith(("/api/", "/mcp"))):
-        from .dashboard import page
+        from .dashboard import page, _security_headers
+        if request.method == "POST":
+            # B34: a failed dashboard action returns to the page it came from with a red toast.
+            from . import flash
+            back = flash.back_with_error(request.headers.get("referer", ""), request.headers.get("host", ""), code)
+            if back:
+                from fastapi.responses import RedirectResponse
+                redirect = _security_headers(RedirectResponse(back, status_code=303))
+                if headers:
+                    redirect.headers.update({k: v for k, v in headers.items() if k.lower() == "retry-after"})
+                return redirect
         response = page("error.html", status=status, viewer=None, status_code=status, code=code,
                         message=message, request_id=request_id(request), retryable=retryable)
         if headers:

@@ -19,7 +19,7 @@
       <ul>
       {% for t in run_status.focus[:5] %}
         <li><div class="run-status-task"><a href="/s/{{ sess.handle }}/t/{{ t.task }}">T{{ t.task }} · {{ t.title }}</a><span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span></div>
-          <p>{{ t.detail }}{% if t.age_min is not none and t.status in ("in_progress", "blocked") %} <span class="muted">· last task activity {{ t.age_min }}m ago</span>{% endif %}</p>
+          <p>{{ t.detail }}{% if t.age_min is not none and t.status in ("in_progress", "blocked") %} <span class="muted">· last task activity {{ t.age_min|ago_min }}</span>{% endif %}</p>
           {% if t.target %}<p class="muted small-text">Target: {{ t.target }}</p>{% endif %}
         </li>
       {% endfor %}

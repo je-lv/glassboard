@@ -25,6 +25,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import re
 import os
 import secrets
 import sqlite3
@@ -34,12 +35,12 @@ from importlib import resources
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, Response, FileResponse
+from fastapi.responses import JSONResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, FileResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
-from . import admin_auth, conversations, db, wake, events, idempotency, ids, inbox, journal, observe, render, routing, run_browser, sessions, tlsboot, tokens
+from . import admin_auth, flash, conversations, db, wake, events, idempotency, ids, inbox, journal, observe, render, routing, run_browser, sessions, tlsboot, tokens
 from .api_messages import MessageIn, send_message
 from .deps import client_addr, get_db
 from .errors import ApiError
@@ -73,6 +74,22 @@ PREVIEW_SNAPSHOT = os.environ.get("GLASSBOARD_PREVIEW_SNAPSHOT") == "1"
 _pkg = resources.files("glassboard")
 _env = Environment(loader=FileSystemLoader(str(_pkg.joinpath("templates"))),
                    autoescape=select_autoescape(["html"], default=True), trim_blocks=True, lstrip_blocks=True)
+
+
+_env.globals["err_text"] = flash.err_text
+
+
+def _ago(seconds) -> str:
+    """UI analysis F08: one readable age everywhere ("just now", "4m ago", "3h 5m ago", "22d ago")."""
+    from .api_status import age_text
+    if seconds is None:
+        return "never"
+    return "just now" if seconds < 60 else age_text(int(seconds)) + " ago"
+
+
+_env.filters["ago"] = _ago
+_env.filters["ago_min"] = lambda minutes: _ago(None if minutes is None else int(minutes) * 60)
+_env.filters["size"] = lambda n: human_size(n)
 
 
 class NeedLogin(Exception):
@@ -112,6 +129,7 @@ def page(name: str, status: int = 200, **ctx) -> HTMLResponse:
     ctx.setdefault("plain_http", PLAIN_HTTP.get())
     ctx.setdefault("experimental_ui", EXPERIMENTAL_UI)
     ctx.setdefault("snapshot_preview", PREVIEW_SNAPSHOT)
+    ctx.setdefault("flash", flash.CURRENT.get())
     return _security_headers(HTMLResponse(_env.get_template(name).render(**ctx), status_code=status))
 
 
@@ -143,6 +161,68 @@ def _line_class(line: str) -> str:
         if line.startswith(prefix):
             return cls
     return "sec"
+
+
+_HEAD = re.compile(r"^#(?P<seq>\d+) (?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z) (?P<actor>[a-z0-9/-]+?)"
+                   r"(?:@(?P<rt>[a-z0-9-]+))?(?: -> (?P<to>.+?))? \[(?P<kind>[a-z.]+)\]"
+                   r"(?: T(?P<task>\d+)(?: g(?P<gen>\d+))?)?(?: re:#(?P<re>\d+))?$")
+_STRUCTURAL = re.compile(r"^(\s{2,}|[-*+\u2022>#|]\s|\d+[.)]\s|```)")
+
+
+def _paragraphs(lines: list[str]) -> list[list[dict]]:
+    """B35: Block text as paragraphs for the browser only (canonical text is unchanged). Blank lines
+    separate paragraphs; consecutive prose lines flow together; list items, quotes, indented and
+    fenced lines keep their own line."""
+    paras, cur, fenced = [], [], False
+    for raw in lines:
+        text = raw[len(render.BLOCK):] if raw.startswith(render.BLOCK) else ""
+        if text.startswith("```"):
+            fenced = not fenced
+            cur.append({"text": text, "pre": True})
+            continue
+        if fenced:
+            cur.append({"text": text, "pre": True})
+            continue
+        if not text.strip():
+            if cur:
+                paras.append(cur); cur = []
+            continue
+        if cur and not cur[-1]["pre"] and not _STRUCTURAL.match(text):
+            cur[-1]["text"] += " " + text.strip()
+        else:
+            cur.append({"text": text if _STRUCTURAL.match(text) else text.strip(), "pre": bool(_STRUCTURAL.match(text))})
+    if cur:
+        paras.append(cur)
+    return paras
+
+
+def event_card(v: dict) -> dict:
+    """One timeline event for the browser: a structured header, body paragraphs, muted metadata.
+    `lines` keeps the canonical text for the forensic trace and for copying."""
+    from .actors import badge, run_label
+    lines = view_lines(v)
+    m = _HEAD.match(lines[0]) if lines else None
+    head = None
+    if m:
+        to = m["to"] or ""
+        head = {"ts": m["ts"], "runtime": m["rt"], "run": run_label(v["actor"], m["rt"]), "kind": m["kind"], "task": m["task"], "gen": m["gen"],
+                "re": int(m["re"]) if m["re"] else None,
+                "to": ["all"] if to == "all" else [h for h in to.split(", ") if h]}
+    body, block = [], []
+    for ln in lines[1:]:
+        if ln.startswith(render.BLOCK) or ln == render.BLOCK.rstrip():
+            block.append(ln if ln.startswith(render.BLOCK) else render.BLOCK)
+            continue
+        if block:
+            body.append({"kind": "paras", "paras": _paragraphs(block)}); block = []
+        cls = _line_class(ln)
+        meta = cls == "inl"
+        body.append({"kind": "line", "cls": cls + (" meta" if meta else ""), "text": ln})
+    if block:
+        body.append({"kind": "paras", "paras": _paragraphs(block)})
+    mark, name, style = badge(v["actor"])
+    return {"seq": v["seq"], "type": v["type"], "lines": lines_view(lines), "head": head, "body": body,
+            "actor": v["actor"], "actor_mark": mark, "actor_name": name, "actor_style": style, "answered": False}
 
 
 def lines_view(lines: list[str]) -> list[dict]:
@@ -208,12 +288,145 @@ def run_status(tasks: list[dict]) -> dict:
             "focus": focus, "achieved": achieved, "stale_parents": stale_parents}
 
 
-def board_for_display(board: dict, status: dict, full_notes: dict[int, str]) -> dict:
+def token_state(cred: dict, now: str | None = None) -> str:
+    """Analysis F02: revoked, expired or active. An expired token no longer works and offers no Revoke."""
+    if cred.get("revoked_at"):
+        return "revoked"
+    if cred.get("expires_at") and cred["expires_at"] <= (now or db.utcnow()):
+        return "expired"
+    return "active"
+
+
+def human_size(n) -> str:
+    """Owner fix F6: 14122 -> '13.8 KB' (binary units, one decimal under 100)."""
+    size = float(n or 0)
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            if unit == "bytes":
+                return f"{int(size)} byte" + ("" if int(size) == 1 else "s")
+            return f"{size:.1f} {unit}" if size < 100 else f"{size:.0f} {unit}"
+        size /= 1024
+    return f"{size:.0f} GB"
+
+
+def artifact_groups(items: list[dict]) -> list[dict]:
+    """Owner fix F6: one entry per file name, newest first; older uploads with the same name are its
+    earlier versions (shown as superseded, never hidden). `items` must be newest first."""
+    groups: dict[str, dict] = {}
+    order = []
+    for item in items:
+        view = dict(item, size_h=human_size(item.get("size")), short_sha=(item.get("sha256") or "")[:12])
+        group = groups.get(item["name"])
+        if group is None:
+            groups[item["name"]] = {"latest": view, "earlier": []}
+            order.append(item["name"])
+        else:
+            group["earlier"].append(view)
+    return [groups[name] for name in order]
+
+
+# B39: status tone per derived state (same chip tones as the kanban cards).
+AGENT_TONE = {"exited_holding": "danger", "stale": "danger", "blocked": "warn", "on_task": "progress",
+              "in_review": "review", "owes_answers": "warn", "idle": "muted"}
+
+
+def agent_rows_for_display(rows: list[dict]) -> list[dict]:
+    from .actors import badge
+    from .api_status import age_text
+    out = []
+    for r in rows:
+        mark, name, style = badge(r["member"])
+        last = r["last_event"]
+        out.append(dict(r, mark=mark, name=name, style=style, tone=AGENT_TONE[r["state"]],
+                        last_text=(f"#{last['seq']} {last['type']} · {age_text(last['age_s'])} ago" if last else "no events yet"),
+                        checkpoint_text=(f"#{r['checkpoint']['n']} · {age_text(r['checkpoint']['age_s'])} ago"
+                                         if r["checkpoint"] else "none"),
+                        doing_age=age_text(r["doing"]["age_s"]) if r["doing"] else None,
+                        run_started=(age_text(r["runs"][0]["started_age_s"]) if r["runs"] else None)))
+    return out
+
+
+def _short_age(seconds) -> str | None:
+    if seconds is None:
+        return None
+    m = max(0, int(seconds)) // 60
+    return f"{m}m" if m < 60 else (f"{m // 60}h" if m < 48 * 60 else f"{m // 1440}d")
+
+
+def _iso_age_s(ts: str | None) -> int | None:
+    if not ts:
+        return None
+    try:
+        then = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return int((datetime.now(timezone.utc) - then).total_seconds())
+
+
+def task_counts(c, session_id: str) -> dict[int, dict]:
+    """B38: per task, files attached and questions still open about it (for the card face)."""
+    counts: dict[int, dict] = {}
+    for num, n in c.execute("SELECT task_num, count(*) FROM artifact WHERE session_id=? AND task_num IS NOT NULL "
+                            "GROUP BY task_num", (session_id,)):
+        counts.setdefault(num, {})["files"] = n
+    for num, n in c.execute(
+            "SELECT q.task_num, count(*) FROM event q WHERE q.session_id=? AND q.type='question' AND q.task_num IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM event a WHERE a.session_id=q.session_id AND a.reply_to=q.seq "
+            "AND a.type IN ('answer','question.resolved')) GROUP BY q.task_num", (session_id,)):
+        counts.setdefault(num, {})["questions"] = n
+    return counts
+
+
+def card_face(task: dict, counts: dict) -> dict:
+    """B38: what a card shows at a glance, derived only from recorded board state (never a timer)."""
+    from .actors import badge
+    status = task["status"]
+    activity = _short_age(task.get("activity_age_s"))
+    changed = _short_age(_iso_age_s(task.get("updated_at")))
+    if status == "review":
+        reviewer = task.get("reviewer")
+        state, tone, age = ("in review" + (f" · @{reviewer}" if reviewer else "")), "review", changed and f"submitted {changed} ago"
+    elif status == "in_progress":
+        if task.get("stale"):
+            state, tone, age = f"stale {activity}" if activity else "stale", "danger", None
+        else:
+            state, tone, age = "claimed", "progress", activity and f"last activity {activity} ago"
+    elif status == "blocked":
+        state, tone, age = "blocked", "warn", activity and f"last activity {activity} ago"
+    elif status == "open":
+        if task.get("ack_overdue"):
+            state, tone = "awaiting acknowledgment", "warn"
+        elif task.get("assignee"):
+            state, tone = "assigned", "muted"
+        else:
+            state, tone = "unclaimed", "muted"
+        age = changed and f"created {changed} ago" if task.get("version", 1) == 1 else changed and f"updated {changed} ago"
+    elif status == "done":
+        state, tone, age = "accepted", "done", changed and f"{changed} ago"
+    else:
+        state, tone, age = status.replace("_", " "), "muted", None
+    review = task.get("review") or {}
+    face = {"state": state, "tone": tone, "age": age, "counts": []}
+    if review.get("verdict") and status in ("review", "in_progress"):
+        face["counts"].append(f"review: {review['verdict']}")
+    c = counts.get(task["task"], {})
+    if c.get("questions"):
+        face["counts"].append(f"{c['questions']} open question" + ("s" if c["questions"] > 1 else ""))
+    if c.get("files"):
+        face["counts"].append(f"{c['files']} file" + ("s" if c["files"] > 1 else ""))
+    if task.get("claimant"):
+        face["badge"] = dict(zip(("mark", "name", "style"), badge(task["claimant"])))
+        face["badge"]["handle"] = task["claimant"]
+    return face
+
+
+def board_for_display(board: dict, status: dict, full_notes: dict[int, str], counts: dict | None = None) -> dict:
     """Add safe compact text and complete modal text to a read-only board view."""
     stale_parent_map = {parent["task"]: parent for parent in status["stale_parents"]}
     for col in board["columns"]:
         col["label"] = col["status"].replace("_", " ")
         for task in col["tasks"]:
+            task["face"] = card_face(task, counts or {})
             task["title_line"] = render.inline(task["title"], 120)
             task["title_full"] = render.r2(task["title"])
             task["deliverable_full"] = render.r2(task["deliverable"])
@@ -225,7 +438,7 @@ def board_for_display(board: dict, status: dict, full_notes: dict[int, str]) -> 
                 task["child_statuses"] = stale_parent_map[task["task"]]["children"]
             if task.get("last_note"):
                 note = task["last_note"]
-                task["note_line"] = render.inline(f"{note['by']}, {note['age_s'] // 60}m ago: {note['text']}", 160)
+                task["note_line"] = render.inline(f"{note['by']}, {_short_age(note['age_s'])} ago: {note['text']}", 160)
                 task["note_full"] = render.r2(full_notes.get(task["task"], note["text"]), allow_newline=True)
     return board
 
@@ -339,6 +552,14 @@ def mount(app: FastAPI) -> None:
     def docs_page():
         """Public product and usage guide; it contains no board or participant data."""
         return page("docs.html")
+
+    @app.get("/docs/agent-reference", include_in_schema=False)
+    def agent_reference_page():
+        """B36: the agent reference (every capability: API route, CLI command, dashboard page), as plain
+        text, the same file `glassboard reference` prints. Public like /docs: no board data in it."""
+        from importlib import resources
+        text = resources.files("glassboard").joinpath("agent_reference.md").read_text(encoding="utf-8")
+        return _security_headers(PlainTextResponse(text, media_type="text/plain; charset=utf-8"))
 
     @app.get("/login", include_in_schema=False)
     def login_form(request: Request):
@@ -478,6 +699,8 @@ def mount(app: FastAPI) -> None:
             credentials = [dict(r) for r in c.execute(
                 "SELECT k.id,k.scope,k.label,k.created_at,k.expires_at,k.revoked_at,k.last_used_at,p.handle "
                 "FROM credential k JOIN principal p ON p.id=k.principal_id ORDER BY k.created_at DESC LIMIT 300").fetchall()]
+            for cr in credentials:
+                cr["state"] = token_state(cr)
             audits = [dict(r) for r in c.execute(
                 "SELECT a.ts,a.action,a.target,a.data,p.handle actor FROM audit a "
                 "LEFT JOIN principal p ON p.id=a.actor_id ORDER BY a.ts DESC LIMIT 150").fetchall()]
@@ -729,6 +952,9 @@ def mount(app: FastAPI) -> None:
         handle = form.get("handle", "")
         if not handle or form.get("confirm") != handle:
             raise ApiError(422, "confirmation_required", "Type the exact handle to confirm the access change.")
+        request.state.flash_ok = {"grant-admin": "admin_granted", "revoke-admin": "admin_revoked",
+                                  "deactivate": "deactivated", "revoke-sessions": "sessions_revoked"}.get(
+                                      form.get("action", ""))
         admin_web.change_access(database, viewer.p, request.app.state.journal_path,
                                 action=form.get("action", ""), handle=handle)
         return _security_headers(RedirectResponse("/admin?tab=access", status_code=303))
@@ -821,10 +1047,10 @@ def mount(app: FastAPI) -> None:
         form = await form_data(request)
         check_post(request, form, viewer)
         _require_admin(viewer)
-        handle = form.get("handle", "").strip()
-        if not handle or not hmac.compare_digest(handle, form.get("confirm", "").strip()):
+        handle = form.get("handle", "").strip()       # analysis F01: archiving deletes nothing, so no typing
+        if not handle:
             return _security_headers(RedirectResponse(
-                "/admin?tab=operations&err=confirmation_required", status_code=303))
+                "/admin?tab=operations&err=invalid_request", status_code=303))
         try:
             workspace_archive.create_archive(database, handle, viewer.p.id)
         except workspace_archive.WorkspaceArchiveError:
@@ -952,6 +1178,7 @@ def mount(app: FastAPI) -> None:
             sess, _ = sessions.require_member(c, s, viewer.p)
         try:
             body = api_messages.ApprovalIn(decision=form.get("decision", ""), note=form.get("note") or None)
+            request.state.flash_ok = {"grant": "approval_granted", "deny": "approval_denied"}.get(body.decision)
             api_messages.decide_approval(s, seq, body, key, sess["recovery_id"], None, viewer.p, database)
         except ValidationError:
             return _security_headers(RedirectResponse("/?err=invalid_request", status_code=303))
@@ -971,12 +1198,36 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/s/{s}/board", include_in_schema=False)
     def board_page(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
+        from . import api_board, api_status
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            b = board_for_display(api_board.board(c, sess), _run_status(c, sess),
+                                  latest_task_note_bodies(c, sess["id"]), task_counts(c, sess["id"]))
+            agents = agent_rows_for_display(api_status.agent_status(c, sess))
+        return page("board.html", viewer=viewer, sess=sess, me=me, board=b, agents=agents)
+
+    @app.get("/s/{s}/board/cards", include_in_schema=False)
+    def board_cards(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
+        """B38: the kanban columns alone, refreshed in place every few seconds (same-origin fragment)."""
         from . import api_board
         with database.read() as c:
             sess, me = sessions.require_member(c, s, viewer.p)
             b = board_for_display(api_board.board(c, sess), _run_status(c, sess),
-                                  latest_task_note_bodies(c, sess["id"]))
-        return page("board.html", viewer=viewer, sess=sess, me=me, board=b)
+                                  latest_task_note_bodies(c, sess["id"]), task_counts(c, sess["id"]))
+        response = page("kanban-cards.html", viewer=viewer, sess=sess, me=me, board=b)
+        response.headers["X-Glassboard-Fragment"] = "poll"
+        return response
+
+    @app.get("/s/{s}/board/agents", include_in_schema=False)
+    def board_agents(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
+        """B39: the agents' status rows alone, refreshed in place with the board (same-origin fragment)."""
+        from . import api_status
+        with database.read() as c:
+            sess, me = sessions.require_member(c, s, viewer.p)
+            agents = agent_rows_for_display(api_status.agent_status(c, sess))
+        response = page("agent-status.html", viewer=viewer, sess=sess, me=me, agents=agents)
+        response.headers["X-Glassboard-Fragment"] = "poll"
+        return response
 
     @app.get("/s/{s}/artifacts", include_in_schema=False)
     def artifacts_page(s: str, viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
@@ -988,8 +1239,8 @@ def mount(app: FastAPI) -> None:
             artifacts = [api_artifacts.artifact_view(c, row) for row in rows]
             tasks = [row["num"] for row in c.execute("SELECT num FROM task WHERE session_id=? ORDER BY num", (sess["id"],))]
         return page("artifacts.html", viewer=viewer, sess=sess, me=me, artifacts=artifacts,
-                    deliverables=[item for item in artifacts if item["purpose"] == "deliverable"],
-                    evidence=[item for item in artifacts if item["purpose"] == "evidence"], tasks=tasks,
+                    deliverables=artifact_groups([item for item in artifacts if item["purpose"] == "deliverable"]),
+                    evidence=artifact_groups([item for item in artifacts if item["purpose"] == "evidence"]), tasks=tasks,
                     can_upload=viewer.p.scope == "full" and me["role"] != "observer", op=ids.new_ulid())
 
     @app.post("/s/{s}/artifacts/upload", include_in_schema=False)
@@ -1107,17 +1358,33 @@ def mount(app: FastAPI) -> None:
             where.append("e.task_num = :task"); args["task"] = task
         rows = c.execute(f"SELECT e.* FROM event e WHERE {' AND '.join(where)} ORDER BY e.seq DESC LIMIT {TIMELINE_LIMIT}",
                          args).fetchall()
-        out = []
         views = inbox.views(c, rows)
-        for v in reversed(views) if order == "oldest" else views:
-            handle = v["actor"]
-            agent = handle.rsplit("/", 1)[-1] if "/" in handle else None
-            known = {"codex": ("C", "Codex"), "claude": ("Cl", "Claude"), "grok": ("G", "Grok")}
-            mark, name = known.get(agent, (agent[:2].upper(), agent) if agent else ("H", handle))
-            out.append({"seq": v["seq"], "type": v["type"], "lines": lines_view(view_lines(v)),
-                        "actor": handle, "actor_mark": mark, "actor_name": name,
-                        "actor_style": agent if agent in known else ("agent" if agent else "human")})
-        return out
+        views = list(reversed(views)) if order == "oldest" else views
+        return [event_card(v) for v in views] if not views else _with_reply_context(c, sess, views)
+
+    def _with_reply_context(c, sess, views) -> list[dict]:
+        """B35: cards, with a short quote of each referenced event and which questions are answered."""
+        cards = [event_card(v) for v in views]
+        refs = sorted({card["head"]["re"] for card in cards if card["head"] and card["head"]["re"]})
+        quoted = {}
+        if refs:
+            marks = ",".join("?" * len(refs))
+            for r in c.execute(f"SELECT seq, type, body FROM event WHERE session_id=? AND seq IN ({marks})",
+                               (sess["id"], *refs)):
+                first = next((ln for ln in (r["body"] or "").splitlines() if ln.strip()), "")
+                quoted[r["seq"]] = {"type": r["type"], "text": render.inline(first, 90)[1:-1] if first else ""}
+        questions = [card["seq"] for card in cards if card["type"] == "question"]
+        answered = set()
+        if questions:
+            marks = ",".join("?" * len(questions))
+            answered = {r[0] for r in c.execute(
+                f"SELECT DISTINCT reply_to FROM event WHERE session_id=? AND type IN ('answer','question.resolved') "
+                f"AND reply_to IN ({marks})", (sess["id"], *questions))}
+        for card in cards:
+            if card["head"] and card["head"]["re"]:
+                card["head"]["re_quote"] = quoted.get(card["head"]["re"])
+            card["answered"] = card["seq"] in answered
+        return cards
 
     def _board(c, sess) -> dict:
         """Board panel: tasks grouped by status (claimant, gen, activity age, stale) and owed
@@ -1503,9 +1770,24 @@ def mount(app: FastAPI) -> None:
                       "claims": [], "owed": owed, "owed_total": owed_total, "inbox": inbox.views(c, page_rows), "more": more}
             members = [r[0] for r in c.execute("SELECT p.handle FROM member m JOIN principal p ON p.id = m.principal_id "
                                                 "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
+            # B36 (parity, report X5): the member's latest checkpoint, under the same rule as the API
+            # (your own, or anyone's for a coordinator).
+            from . import api_checkpoints
+            me = c.execute("SELECT role FROM member WHERE session_id=? AND principal_id=? AND left_at IS NULL",
+                           (sess["id"], viewer.p.id)).fetchone()
+            may_read = target["principal_id"] == viewer.p.id or (me is not None and me["role"] == "coordinator")
+            checkpoint, checkpoint_count = None, 0
+            if may_read:
+                row = api_checkpoints.latest(c, sess["id"], target["principal_id"])
+                checkpoint_count = c.execute("SELECT count(*) FROM checkpoint WHERE session_id=? AND principal_id=?",
+                                             (sess["id"], target["principal_id"])).fetchone()[0]
+                if row is not None:
+                    from .textviews import checkpoint_lines
+                    checkpoint = lines_view(checkpoint_lines(api_checkpoints.checkpoint_view(row, target["handle"])))
         text_lines = sync_text(result, target["consumer_runtime"]).split("\n")
         return page("agent.html", viewer=viewer, sess=sess, who=target["handle"], members=members,
-                    lines=lines_view(text_lines))
+                    lines=lines_view(text_lines), checkpoint=checkpoint, checkpoint_count=checkpoint_count,
+                    may_read_checkpoint=may_read)
 
     # --- tasks ---------------------------------------------------------------------------
 
@@ -1625,6 +1907,7 @@ def mount(app: FastAPI) -> None:
                 "WHERE principal_id=? ORDER BY created_at DESC", (viewer.p.id,))]
             for cr in own_tokens:
                 cr["label"] = render.r2(cr["label"] or "")
+                cr["state"] = token_state(cr)
             for a in c.execute("SELECT id, handle, kind, active, created_at FROM principal WHERE owner_id=? ORDER BY handle",
                                (viewer.p.id,)):
                 creds = [dict(r) for r in c.execute(
@@ -1632,6 +1915,7 @@ def mount(app: FastAPI) -> None:
                     "WHERE principal_id=? ORDER BY created_at DESC", (a["id"],))]
                 for cr in creds:
                     cr["label"] = render.r2(cr["label"] or "")
+                    cr["state"] = token_state(cr)
                 sessions_of = [dict(r) for r in c.execute(
                     "SELECT s.handle, m.role, m.last_seen_at FROM member m JOIN session s ON s.id=m.session_id "
                     "WHERE m.principal_id=? AND m.left_at IS NULL ORDER BY s.handle", (a["id"],))]
@@ -1639,7 +1923,7 @@ def mount(app: FastAPI) -> None:
                     so["title"] = team_title(a["kind"], so["role"])
                 agents.append({"handle": a["handle"], "kind": a["kind"], "active": bool(a["active"]),
                                "created_at": a["created_at"], "tokens": creds, "sessions": sessions_of,
-                               "live_tokens": sum(1 for cr in creds if not cr["revoked_at"])})
+                               "live_tokens": sum(1 for cr in creds if cr["state"] == "active")})
         return page("agents.html", viewer=viewer, agents=agents, own_tokens=own_tokens, tab=tab,
                     coord_sessions=coord_sessions, join_clients=JOIN_CLIENTS,
                     op=ids.new_ulid(), error=request.query_params.get("err"))
@@ -1680,6 +1964,7 @@ def mount(app: FastAPI) -> None:
         key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
         try:
             if form.get("action") == "revoke":
+                request.state.flash_ok = "token_revoked"
                 cid = form.get("credential", "")
                 if not tokens.CRED_ID_RE.match(cid):
                     raise ApiError(404, "not_found", "No such credential of yours.")
@@ -1745,7 +2030,7 @@ def mount(app: FastAPI) -> None:
         edit["checklist"] = {"value": "\n".join(items) if clean_items else "", "hidden": not clean_items}
         edit["depends_on"] = ", ".join(f"T{d['task']}" for d in view["depends_on"])
         edit["parent"] = f"T{view['parent']}" if view["parent"] else ""
-        return page("task.html", viewer=viewer, sess=sess, me=me, t=view, title_line=render.inline(view["title"], 120),
+        return page("task.html", viewer=viewer, sess=sess, me=me, t=view, title_line=render.inline(view["title"], render.INLINE_LIMITS["title"]),
                     edit=edit, head=lines_view(head), history=history,
                     trail=trail, artifacts=artifacts,
                     members=members, op=ids.new_ulid(), error=request.query_params.get("err"),

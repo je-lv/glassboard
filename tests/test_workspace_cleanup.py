@@ -86,9 +86,9 @@ def test_admin_operations_require_admin_and_exact_confirmation(gb):
     page = admin.get("/admin?tab=operations")
     assert page.status_code == 200 and "Workspace retention" in page.text
     csrf = csrf_of(page.text)
-    refused = admin.post("/admin/workspaces/archive", data={"csrf": csrf, "handle": "s1", "confirm": "wrong"})
-    assert refused.status_code == 303 and "confirmation_required" in refused.headers["location"]
-    made = admin.post("/admin/workspaces/archive", data={"csrf": csrf, "handle": "s1", "confirm": "s1"})
+    refused = admin.post("/admin/workspaces/archive", data={"csrf": csrf, "handle": ""})
+    assert refused.status_code == 303 and "invalid_request" in refused.headers["location"]
+    made = admin.post("/admin/workspaces/archive", data={"csrf": csrf, "handle": "s1"})   # no typing: deletes nothing
     assert made.status_code == 303
     archive_id = gb.raw.execute("SELECT id FROM workspace_archive").fetchone()[0]
     download = admin.get(f"/admin/workspace-archives/{archive_id}")

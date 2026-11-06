@@ -1,4 +1,4 @@
-{% from "evline.html" import evtext %}
+{% from "evline.html" import evtext, evcard %}
 <div class="timeline-title"><h2>Activity</h2>
 <div class="timeline-key" aria-label="Activity color key">
   <span><i class="key-dot key-session" aria-hidden="true"></i>Session</span>
@@ -8,6 +8,8 @@
   <span><i class="key-dot key-done" aria-hidden="true"></i>Accepted</span>
   <span><i class="key-dot key-danger" aria-hidden="true"></i>Blocked / cancelled</span>
   <span><i class="key-dot key-system" aria-hidden="true"></i>System</span>
+  <span><i class="key-dot key-question" aria-hidden="true"></i>Question / approval</span>
+  <span><i class="key-dot key-decision" aria-hidden="true"></i>Decision</span>
   <span><i class="key-dot key-message" aria-hidden="true"></i>Message / other</span>
 </div><nav class="timeline-order" aria-label="Activity order">
   <a href="/s/{{ sess.handle }}/trace">Forensic trace</a>
@@ -16,6 +18,5 @@
 </nav></div>
 {% if not timeline %}<p class="muted">Nothing here yet.</p>{% endif %}
 {% for ev in timeline %}
-<div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{% if loop.first %}<span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span>{% endif %}{{ evtext(ln) }}</div>{% endfor %}
-{% if ev.type == "proposal" and can_coordinate %}<a class="act" href="/s/{{ sess.handle }}/new-task?from={{ ev.seq }}">make a task from #{{ ev.seq }}</a>{% endif %}</div>
+{% call evcard(ev, sess.handle) %}{% if ev.type == "proposal" and can_coordinate %}<a class="act" href="/s/{{ sess.handle }}/new-task?from={{ ev.seq }}">make a task from #{{ ev.seq }}</a>{% endif %}{% endcall %}
 {% endfor %}

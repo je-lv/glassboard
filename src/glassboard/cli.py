@@ -899,6 +899,8 @@ def cmd_sync(a) -> int:
         flush(ctx)
         rt = ctx.state.runtime(ctx.label)
         body: dict = {"limit": a.limit}
+        if getattr(a, "include_checkpoint", False):
+            body["include_checkpoint"] = True                 # after a compaction: your checkpoint in full
         if a.wait:
             body["wait"] = max(0, min(25, a.wait))         # long-poll, at most 25 s
         headers = {"X-Glassboard-Recovery": ctx.info["recovery_id"]}
@@ -1307,6 +1309,74 @@ def _session_view(a, path: str, query: dict | None = None) -> int:
     return EXIT_OK
 
 
+def _report_exit(label: str, code: int) -> None:
+    """B37: the client of runtime `label` exited. Report it to every session where this runtime kept
+    local state (an inbox consumer or task fences); the board records it only if work is still held."""
+    root = clistate.state_root()
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return
+    try:
+        cfg, tok = _authed()
+    except CliError:
+        return
+    body = {"signal": -code} if code < 0 else {"exit_code": code}
+    for name in names:
+        try:
+            state = clistate.SessionState(name)
+        except ValueError:
+            continue
+        info, rt = state.load(), state.runtime(label)
+        if not info or not (rt.get("consumer") or rt.get("fences")):
+            continue
+        headers = {"X-Glassboard-Recovery": info["recovery_id"], "X-Glassboard-Runtime": label,
+                   "Idempotency-Key": ids.new_ulid()}
+        try:
+            r = _call(cfg, tok, "POST", f"/api/v1/sessions/{_quote(name)}/runtime/exited", body=body, headers=headers)
+        except CliError as e:
+            print(f"glassboard: {name}: exit not reported ({e.kind})", file=sys.stderr)
+            continue
+        if r.get("seq"):
+            print(f"glassboard: {name}: reported that runtime {label} exited while holding work (#{r['seq']})",
+                  file=sys.stderr)
+
+
+def cmd_export(a) -> int:
+    """The whole session: canonical text (md, default) or one JSON event per line (jsonl)."""
+    ctx = open_session(a, allow_reconcile=True)
+    raw = _call(ctx.cfg, ctx.tok, "GET", f"{ctx.path}/export?format={a.format}", accept_text=True)
+    if a.out:
+        with open(a.out, "x", encoding="utf-8") as fh:
+            fh.write(raw)
+        print(f"exported {ctx.path.rsplit('/', 1)[-1]} to {a.out}")
+    else:
+        sys.stdout.write(r2(raw, allow_newline=True) if a.format == "md" else raw)
+    return EXIT_OK
+
+
+def cmd_invite(a) -> int:
+    """Humans (Session Managers): a one-time join code for one of your agents."""
+    ctx = open_session(a)
+    with ctx.state.locked():
+        r = send_op(ctx, "POST", f"{ctx.path}/invites", {"agent": a.agent, "role": a.role}, f"invite {a.agent}")
+    if a.json:
+        _print_json(r)
+        return EXIT_OK
+    print(f"@{r2(r['agent'])} invited to {r2(r['session'])} · expires {r2(r['expires_at'])}")
+    if r.get("code"):
+        print(f"one-time code (shown once): {r2(r['code'])}")
+        print(f"on the agent's machine: glassboard join {r2(ctx.cfg['url'])} {r2(r['code'])}")
+    return EXIT_OK
+
+
+def cmd_reference(a) -> int:
+    """The agent reference: every capability with its API route, CLI command and dashboard page."""
+    from importlib import resources
+    sys.stdout.write(resources.files("glassboard").joinpath("agent_reference.md").read_text(encoding="utf-8"))
+    return EXIT_OK
+
+
 def cmd_approval(a) -> int:
     ctx = open_session(a)
     body = {"decision": a.decision}
@@ -1572,6 +1642,8 @@ def build_parser() -> argparse.ArgumentParser:
     sy = sess(sub.add_parser("sync")); sy.add_argument("--ack", nargs="?", const="stored", metavar="N")
     sy.add_argument("--takeover", metavar="REASON"); sy.add_argument("--limit", type=int, default=50)
     sy.add_argument("--wait", type=int, default=0); sy.add_argument("--json", action="store_true")
+    sy.add_argument("--include-checkpoint", action="store_true",
+                    help="include your latest checkpoint in full (use after a context compaction)")
     wa = sess(sub.add_parser("watch", help="runner integration: continuously long-poll and emit JSON packets"))
     wa.add_argument("--wait", type=int, default=20, metavar="SECONDS")
     wa.add_argument("--limit", type=int, default=50)
@@ -1630,7 +1702,16 @@ def build_parser() -> argparse.ArgumentParser:
     dg = sess(sub.add_parser("digest", help="what changed since your last ack (or --after N)"))
     dg.add_argument("--after", type=int); dg.add_argument("--json", action="store_true")
     de = sess(sub.add_parser("decisions", help="every decision in the session")); de.add_argument("--json", action="store_true")
+    ex = sess(sub.add_parser("export", help="the whole session as canonical text (md) or JSON lines"))
+    ex.add_argument("--format", choices=["md", "jsonl"], default="md"); ex.add_argument("--out", help="write to a new file")
+    iv = sess(sub.add_parser("invite", help="Session Managers: one-time join code for one of your agents"))
+    iv.add_argument("agent", help="the agent's name under you (alice/<agent>)")
+    iv.add_argument("--role", choices=["member", "coordinator", "observer"], default="member")
+    iv.add_argument("--json", action="store_true")
+    sub.add_parser("reference", help="print the agent reference (every capability: API, CLI, dashboard)")
     su = sess(sub.add_parser("standup", help="each member's latest stand-up update")); su.add_argument("--json", action="store_true")
+    st = sess(sub.add_parser("status", help="one row per agent: derived state and why, claims, owed, leases, last event, checkpoint"))
+    st.add_argument("--json", action="store_true")
     apv = sess(sub.add_parser("approval", help="humans: grant or deny an approval request"))
     apv.add_argument("decision", choices=["grant", "deny"]); apv.add_argument("seq", type=int); apv.add_argument("note", nargs="?")
     le = sess(sub.add_parser("lease", help="advisory claims on a resource (path, document, service)"))
@@ -1705,7 +1786,7 @@ def _main(argv=None) -> int:
             if not cmd:
                 raise CliError(EXIT_USAGE, "usage", "usage: glassboard run -- <command> [args...]")
             livesession.hold_for_client()                     # a wake supervisor sees this client as open (E31)
-            runtime.run(cmd)
+            return runtime.run(cmd, on_exit=_report_exit)
         if a.cmd == "session":
             return cmd_session_create(a) if a.action == "create" else cmd_session_state(a)
         return {"login": cmd_login, "whoami": cmd_whoami, "doctor": cmd_doctor,
@@ -1714,11 +1795,12 @@ def _main(argv=None) -> int:
                 "token": cmd_token, "role": cmd_role, "post": cmd_post, "preflight": cmd_preflight,
                 "sync": cmd_sync, "watch": cmd_watch, "wake": cmd_wake, "history": cmd_history, "board": cmd_board, "artifact": cmd_artifact,
                 "digest": lambda a: _session_view(a, "digest", {"after": a.after}),
-                "decisions": lambda a: _session_view(a, "decisions"), "standup": lambda a: _session_view(a, "standup"),
+                "decisions": lambda a: _session_view(a, "decisions"), "standup": lambda a: _session_view(a, "standup"), "status": lambda a: _session_view(a, "status"),
                 "approval": cmd_approval, "lease": cmd_lease, "flow": lambda a: _session_view(a, "flow"),
                 "attention": lambda a: _me_view("attention", a), "overview": lambda a: _me_view("overview", a),
                 "question": cmd_question, "reconcile": cmd_reconcile, "outbox": cmd_outbox, "task": cmd_task,
-                "checkpoint": cmd_checkpoint, "join": cmd_join, "protocol": cmd_protocol, "skill": cmd_skill}[a.cmd](a)
+                "checkpoint": cmd_checkpoint, "join": cmd_join, "protocol": cmd_protocol, "skill": cmd_skill,
+                "export": cmd_export, "invite": cmd_invite, "reference": cmd_reference}[a.cmd](a)
     except CliError as e:
         _print_error(e)
         return e.code

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "evline.html" import evcard %}
 {% block title %}{{ sess.handle }} · Admin · Glassboard{% endblock %}
 {% block main %}
 <a class="crumb" href="/admin">← Admin console</a>
@@ -11,7 +12,7 @@
 </section>
 <section class="admin-inspect-board" aria-labelledby="admin-board-title">
   <h2 id="admin-board-title">Board</h2>
-  <p class="muted small-text">Open a card's full details with the disclosure control.</p>
+  <p class="muted small-text">Open a task to see its details.</p>
   {% set allow_task_links = joined %}
   {% include "kanban.html" %}
 </section>
@@ -19,7 +20,7 @@
   <section class="timeline">
     <div class="timeline-title"><h2>Activity</h2><span>Latest {{ timeline|length }} events</span></div>
     {% for ev in timeline %}
-    <div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">{% for ln in ev.lines %}<div class="ln {{ ln.cls }}">{% if loop.first %}<span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span>{% endif %}<span>{{ ln.text }}</span></div>{% endfor %}</div>
+    {{ evcard(ev, sess.handle, links=joined) }}
     {% else %}<p class="muted">No activity yet.</p>{% endfor %}
     {% if older %}<p><a href="/admin/{% if source is not none %}external/{{ source }}/{% endif %}s/{{ sess.handle }}?before={{ older }}">Older events</a></p>{% endif %}
   </section>

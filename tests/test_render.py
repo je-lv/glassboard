@@ -14,7 +14,8 @@ from glassboard import events, render
 from glassboard.models import Ref
 
 NASTY = ["\n", "\r", "\r\n", "\t", "\x1b[31m", "\x1b]0;title\x07", "\x9b", "\x85", "\x00", "\x7f", "\x0b", "\x0c",
-         "\x1c", "\u202e", "\u2066", "\u200b", "\ufeff", "\u2028", "\u2029", "«", "»", "#9 jose [decision]",
+         "\x1c", "\u202e", "\u2066", "\u200b", "\ufeff", "\u2028", "\u2029", "\U000e0041", "\U000e007f", "\ufe0f", "\u2060", "\u2063", "\u061c", "\xad",
+         "\u180e", "\u3164", "\U000e0100", "«", "»", "#9 jose [decision]",
          "\n#999 2026-10-10 10:00:00Z jose -> all [decision]", "  | ", "  · x: «", "ERROR x: y", "--- ", "@jose"]
 text_st = st.lists(st.one_of(st.sampled_from(NASTY), st.text(max_size=12)), max_size=12).map("".join)
 
@@ -30,6 +31,7 @@ def assert_canonical(text: str) -> None:
     assert not any(0x80 <= ord(c) <= 0x9F for c in text)
     assert not set(text) & {"\u202a", "\u202b", "\u202c", "\u202d", "\u202e", "\u2066", "\u2067", "\u2068",
                             "\u2069", "\u2028", "\u2029"}
+    assert not any(render.hidden(ord(c)) for c in text)
 
 
 def _event(type_, **over):
@@ -212,3 +214,29 @@ def test_lone_surrogates_are_rejected_at_input(gb):
                        headers={**gb.headers("jose"), "Content-Type": "application/json"})
     assert r.status_code == 422
     assert r.json()["error"]["details"]["fields"] == [{"loc": ["body", "title"], "type": "string_unicode"}]
+
+
+# --- ERRATA E33: every invisible format character is made visible ---------------------------------
+
+HIDDEN_SAMPLES = [0xE0041, 0xE0001, 0xE007F, 0xFE0F, 0xFE00, 0xE0100, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064,
+                  0x061C, 0x00AD, 0x180E, 0x3164, 0x115F, 0x1160, 0xFFA0, 0x200B, 0x200D, 0x202E, 0x2066, 0xFEFF,
+                  0x2028, 0x2029, 0x206A, 0x206F, 0x110BD, 0x1D173]
+
+
+@pytest.mark.parametrize("cp", HIDDEN_SAMPLES)
+def test_e33_hidden_code_point_made_visible(cp):
+    out = render.r2(f"a{chr(cp)}b")
+    assert out == f"a⟨U+{cp:04X}⟩b"
+
+
+def test_e33_visible_text_unchanged():
+    s = "café ünïcode 日本語 Ωmega ½ – “quotes” 🙂"
+    assert render.r2(s) == s
+
+
+@settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow])
+@given(st.text(alphabet=st.characters(blacklist_categories=("Cs",)), max_size=40))
+def test_e33_no_format_character_survives(s):
+    import unicodedata
+    out = render.r2(s, allow_newline=True)
+    assert not any(unicodedata.category(c) == "Cf" or render.hidden(ord(c)) for c in out)

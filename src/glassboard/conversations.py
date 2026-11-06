@@ -22,11 +22,13 @@ BODY_PREVIEW_LINES = 12
 
 
 def _actor_style(handle: str) -> tuple[str, str, str]:
-    agent = handle.rsplit("/", 1)[-1] if "/" in handle else None
-    known = {"codex": ("C", "Codex"), "claude": ("Cl", "Claude"), "grok": ("G", "Grok"),
-             "glm": ("GL", "GLM")}
-    mark, name = known.get(agent, (agent[:2].upper(), agent) if agent else ("H", handle))
-    return mark, name, agent if agent in known else ("agent" if agent else "human")
+    from .actors import badge
+    return badge(handle)
+
+
+def _run_label(handle: str, runtime: str | None) -> str | None:
+    from .actors import run_label
+    return run_label(handle, runtime)
 
 
 def _data_fields(data: dict | None) -> list[dict]:
@@ -58,6 +60,7 @@ def _item(view: dict, session: str | None = None) -> dict:
     body, preview, body_long = _body_view(view.get("body") or "")
     return {
         "seq": view["seq"], "ts": view["ts"], "actor": view["actor"], "runtime": view.get("runtime"),
+        "run": _run_label(view["actor"], view.get("runtime")),
         "type": view["type"], "to": to, "task": view.get("task"), "re": view.get("re"),
         "body": body, "body_preview": preview, "body_long": body_long,
         "fields": _data_fields(view.get("data")),

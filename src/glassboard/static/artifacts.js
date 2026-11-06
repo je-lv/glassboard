@@ -27,7 +27,10 @@
       var result = await response.json();
       if (!response.ok) throw new Error((result.error && result.error.message) || "Upload failed.");
       status.textContent = "Uploaded " + result.artifact + ". Reloading…";
-      window.location.reload();
+      var next = new URL(window.location.href);           // the page shows the "File uploaded." toast
+      next.searchParams.delete("err");
+      next.searchParams.set("ok", "artifact_uploaded");
+      window.location.assign(next.pathname + next.search);
     } catch (error) { status.textContent = error.message || "Upload failed."; }
   });
 }());

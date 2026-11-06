@@ -4,7 +4,6 @@
 {% block main %}
 <a class="crumb" href="/s/{{ sess.handle }}">← {{ sess.handle }}</a>
 <h1>New task{% if src %} from proposal #{{ src }}{% endif %}</h1>
-{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
 {% if drafts %}
 <form method="post" action="/s/{{ sess.handle }}/tasks-from-drafts" class="card">
   <h2>Drafted tasks in proposal #{{ src }}</h2>
@@ -35,6 +34,6 @@
   <label for="depends_on">Depends on (e.g. T3, T4; optional)</label><input id="depends_on" name="depends_on">
   <label for="parent">Parent task (e.g. T1; optional)</label><input id="parent" name="parent">
   <label for="stale">Stale after (seconds, optional)</label><input id="stale" name="stale_after_s" inputmode="numeric">
-  <button type="submit">Create</button>
+  <button type="submit" class="primary">Create</button>
 </form>
 {% endblock %}

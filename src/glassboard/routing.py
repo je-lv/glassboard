@@ -42,6 +42,7 @@ RULES = {
     "wake.armed": None, "wake.dispatched": None, "wake.inspected": None, "wake.resumed": None, "wake.disarmed": None,
     "wake.takeover": "owner_and_coordinators", "wake.paused": "owner_and_coordinators",
     "wake.stopped": "owner_and_coordinators", "wake.held": "owner_and_coordinators",
+    "runtime.exited": "owner_and_coordinators",          # B37: a client exited while holding work
 }
 assert set(RULES) == set(events.TYPES), "every event type needs a routing rule"
 

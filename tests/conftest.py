@@ -164,6 +164,7 @@ def api_routes(app_or_routes):
 # recovery → 428, ...) fail when a body route has no entry, so new routes are never skipped silently.
 VALID_BODIES = {
     ("POST", "/api/v1/sessions/{s}/wake/arm"): {"adapter": "claude"},
+    ("POST", "/api/v1/sessions/{s}/runtime/exited"): {"exit_code": 0},
     ("POST", "/api/v1/sessions/{s}/wake/inspected"): {"generation": 0},
     ("POST", "/api/v1/sessions/{s}/wake/dispatch"): {"fence": "W1-aaaaaaaaaa", "generation": 1},
     ("POST", "/api/v1/sessions/{s}/wake/pause"): {"fence": "W1-aaaaaaaaaa", "reason": "r"},

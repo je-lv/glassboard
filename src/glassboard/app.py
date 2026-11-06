@@ -20,8 +20,8 @@ from fastapi.responses import PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import __version__, wake, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
-from . import longpoll, mcp_adapter, textviews, tlsboot, transport
+from . import __version__, wake, api_runtime, api_status, api_artifacts, api_board, api_comm, api_coord, api_join, api_checkpoints, api_roles, backup, api_me, api_messages, api_sessions, api_sync, api_tasks, dashboard, db, events, journal, run_browser, tokens
+from . import flash, longpoll, mcp_adapter, textviews, tlsboot, transport
 from .metrics import Metrics
 from .sweeper import Sweeper
 from . import sessions as session_svc
@@ -180,10 +180,21 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
         rid = request_id(request)
         t0 = time.perf_counter()
         plain_token = dashboard.PLAIN_HTTP.set(plain)
+        browser = not request.url.path.startswith(("/api/", "/mcp", "/static/", "/health/"))
+        flash_token = flash.CURRENT.set(flash.for_page(request.url.path, request.url.query)
+                                        if browser and request.method == "GET" else None)
         try:
             response = await call_next(request)
         finally:
             dashboard.PLAIN_HTTP.reset(plain_token)
+            flash.CURRENT.reset(flash_token)
+        if browser and request.method == "POST" and response.status_code == 303 and request.scope.get("route"):
+            # B34: every successful dashboard action names what it did (a fixed message, never input).
+            code = flash.ok_code(request.scope["route"].path, request.scope.get("path_params") or {},
+                                 getattr(request.state, "flash_ok", None))
+            location = response.headers.get("location", "")
+            if code and location.startswith("/"):
+                response.headers["location"] = flash.with_code(location, "ok", code)
         response.headers["X-Request-Id"] = rid
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -294,6 +305,8 @@ def create_app(db_path: str | None = None, allowed_hosts: list[str] | None = Non
     app.include_router(api_roles.router)
     app.include_router(api_roles.session_router)
     app.include_router(wake.router)
+    app.include_router(api_runtime.router)
+    app.include_router(api_status.router)
     dashboard.mount(app)
     if mcp_endpoint is not None:
         app.add_route("/mcp", mcp_endpoint, methods=["GET", "POST", "DELETE"], include_in_schema=False)

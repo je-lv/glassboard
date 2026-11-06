@@ -238,7 +238,8 @@
 
   function refresh() {
     if (document.visibilityState !== "visible") { return; }
-    document.querySelectorAll("#timeline[data-src], #run-status[data-src], #run-strip[data-src], #observe-live[data-src]")
+    document.querySelectorAll("#timeline[data-src], #run-status[data-src], #run-strip[data-src], #observe-live[data-src], " +
+                              "#kanban-live[data-src], #agents-live[data-src]")
       .forEach(function (box) {
         var state = controller(box);
         if (state.loading) { return; }

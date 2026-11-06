@@ -135,7 +135,7 @@ def test_owner_console_lists_and_joins_a_workspace_with_one_event(d):
     form = re.search(r'<form method="post" action="/owner/s/other/join".*?</form>', page.text, re.S).group()
     values = dict(re.findall(r'name="([^"]+)" value="([^"]*)"', form))
     result = c.post("/owner/s/other/join", data=values)
-    assert result.status_code == 303 and result.headers["location"] == "/s/other"
+    assert result.status_code == 303 and result.headers["location"] == "/s/other?ok=joined"
     assert c.get("/s/other").status_code == 200
     event = d.raw.execute("SELECT type, data FROM event WHERE session_id=(SELECT id FROM session WHERE handle='other') "
                           "ORDER BY seq DESC LIMIT 1").fetchone()
@@ -296,10 +296,10 @@ def test_csp_and_security_headers_on_every_page(d):
         # Only the known local scripts for this page; never inline or remote code.
         scripts = re.findall(r"<script[^>]*>", r.text)
         expected = {
-            "/": ["panels.js", "notify.js"],
-            "/s/s1": ["poll.js", "workbench.js", "notify.js"],
+            "/": ["panels.js", "notify.js", "confirm.js", "copy.js"],
+            "/s/s1": ["poll.js", "workbench.js", "notify.js", "confirm.js", "copy.js"],
             "/s/s1/timeline": [],
-            "/s/s1/agent?as=ana": ["notify.js"],
+            "/s/s1/agent?as=ana": ["notify.js", "confirm.js", "copy.js"],
             "/login": [],
         }[path]
         expected = [f'<script src="/static/{name}">' for name in expected]
@@ -384,7 +384,9 @@ def test_at_5_6_xss_corpus_is_inert(d):
     assert "&lt;script&gt;alert(&#39;dn&#39;)&lt;/script&gt;" in s1      # display_name sanitized, then escaped
     assert re.findall(r"<script[^>]*>", s1) == ['<script src="/static/poll.js">',
                                                    '<script src="/static/workbench.js">',
-                                                   '<script src="/static/notify.js">']
+                                                   '<script src="/static/notify.js">',
+                                                   '<script src="/static/confirm.js">',
+                                                   '<script src="/static/copy.js">']
 
 
 # --- read-only views -----------------------------------------------------------------------------
@@ -480,11 +482,13 @@ def test_activity_identifies_actor_and_explains_event_colors(d):
     for label in ("Session", "Team / new task", "Task activity", "Submit / review / return",
                   "Accepted", "Blocked / cancelled", "System", "Message / other"):
         assert label in html
-    # The event kind is wrapped for its color; the header's text is still exactly the canonical line.
-    assert '<span class="ev-kind">[note]</span>' in html
-    header = re.search(r'<div class="ln hdr">(.*?)</div>', html.split('data-event="note"', 1)[1]).group(1)
-    text = html_mod.unescape(re.sub(r"<[^>]+>", "", header.split("</span></span>", 1)[1]))   # drop the actor badge
-    assert re.fullmatch(r"#\d+ \S+ \S+Z jose/claude(@\S+)? -> all \[note\]", text), text
+    # B35: the kind is first-class in the card header; the exact canonical header line stays available
+    # as the title of the seq/time meta, and the body is shown as paragraphs.
+    card = html.split('data-event="note"', 1)[1]
+    assert '<span class="ev-kind">note</span>' in card and "</span> everyone</span>" in card
+    canonical = html_mod.unescape(re.search(r'<span class="ev-meta" title="([^"]+)"', card).group(1))
+    assert re.fullmatch(r"#\d+ \S+ \S+Z jose/claude(@\S+)? -> all \[note\]", canonical), canonical
+    assert '<div class="ev-text"><p><span class="seg">CLAUDE NOTE</span></p></div>' in card
 
 
 # --- /metrics -----------------------------------------------------------------------------------------
@@ -534,19 +538,19 @@ def test_sessions_and_members_from_the_dashboard(d):
     the same API code paths run (events, last-coordinator guard, journaled removals)."""
     c = login(d, "jose")
     home = c.get("/").text
-    assert 'class="session-title"' in home
-    assert "Open session" in home and "Open board" in home
+    assert 'class="item-title stretch session-title" href="/s/' in home       # the title opens the session
+    assert ">Open board</a>" in home and "Open session" not in home
     form = {"csrf": csrf_of(home), "op": "dash-ns-0001", "handle": "test2", "title": "Second agent test"}
     r = c.post("/new-session", data=form)
-    assert r.status_code == 303 and r.headers["location"] == "/s/test2"
+    assert r.status_code == 303 and r.headers["location"] == "/s/test2?ok=session_created"
     assert c.post("/new-session", data={**form, "op": "dash-ns-0002"}).headers["location"] == "/?err=handle_taken"
-    assert "A session with that handle already exists" in c.get("/?err=handle_taken").text
+    assert "That handle already exists or is reserved" in c.get("/?err=handle_taken").text
     assert "Manage team access and project roles" in c.get("/s/test2").text
     page = c.get("/s/test2/team").text
     assert '<option>jose/claude</option>' in page and "Add an existing participant" in page
     base = {"csrf": csrf_of(page), "recovery": d.rec("test2")}
     r = c.post("/s/test2/members", data={**base, "op": "dash-m-0001", "handle": "jose/claude", "role": "member", "action": "add"})
-    assert r.status_code == 303 and r.headers["location"] == "/s/test2"
+    assert r.status_code == 303 and r.headers["location"] == "/s/test2?ok=members_updated"
     r = c.post("/s/test2/members", data={**base, "op": "dash-m-0002", "handle": "jose/claude", "role": "observer", "action": "role"})
     assert r.status_code == 303
     assert d.raw.execute("SELECT m.role FROM member m JOIN principal p ON p.id=m.principal_id JOIN session s ON "

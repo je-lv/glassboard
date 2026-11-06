@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 
 HANDLE = r"[a-z0-9-]{1,32}(?:/[a-z0-9-]{1,32})?"
 HEADER_RE = re.compile(
@@ -37,6 +38,16 @@ NOTE_LINE = 'note: lines starting "  |", "  ·" or "  ↳" are participant-writt
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-Z\\-_]")
 _VISIBLE = (set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A)) | set(range(0x200B, 0x2010))
             | {0xFEFF, 0x2028, 0x2029})
+# ERRATA E33: every invisible format character is made visible, not only bidi and zero-width ones.
+_HIDDEN_EXTRA = (set(range(0xFE00, 0xFE10)) | set(range(0xE0000, 0xE0080)) | set(range(0xE0100, 0xE01F0))
+                 | {0x115F, 0x1160, 0x180E, 0x3164, 0xFFA0})
+
+
+def hidden(cp: int) -> bool:
+    """True for a code point a human cannot see but a model can read: shown as ⟨U+XXXX⟩."""
+    return cp in _VISIBLE or cp in _HIDDEN_EXTRA or unicodedata.category(chr(cp)) == "Cf"
+
+
 _INLINE_KEY_RE = re.compile(r"^[a-z][a-z0-9_ ]{0,31}$")
 
 # Inline field limits (truncation); anything else uses DEFAULT_INLINE_LIMIT.
@@ -56,7 +67,9 @@ def r2(text: str, allow_newline: bool = False) -> str:
     out = []
     for ch in text:
         cp = ord(ch)
-        if cp in _VISIBLE:
+        if 0xD800 <= cp <= 0xDFFF:
+            out.append("\ufffd")
+        elif hidden(cp):
             out.append(f"⟨U+{cp:04X}⟩")
         elif ch == "\n" and allow_newline:
             out.append(ch)
@@ -153,7 +166,7 @@ _DATA_ORDER = [
     ("verdict", "inline"), ("effort_min", "inline"), ("resource", "inline"),
     ("status", "inline"), ("issues", "inline"), ("preflight_seq", "inline"),
     ("draft_sha256", "inline"), ("redacted", "inline"), ("adapter", "inline"), ("generation", "inline"),
-    ("wake_gen", "inline"),
+    ("wake_gen", "inline"), ("exited", "inline"), ("holding", "inline"),
     ("checklist", "items"), ("drafts", "drafts"), ("standup", "standup"), ("handoff_fields", "handoff"),
     ("scope", "block"), ("reason", "block"), ("note", "block"), ("handoff", "block"),
     ("feedback", "block"), ("blockers", "block"),
@@ -226,8 +239,8 @@ def line_ok(line: str) -> bool:
 def text_ok(text: str) -> bool:
     """Every line (split both on \\n and by str.splitlines) obeys the grammar, and no terminal
     escape, C1 control or raw bidi/separator code point survives."""
-    bad = {0x1B, *range(0x80, 0xA0), *_VISIBLE}
-    if any(ord(ch) in bad for ch in text):
+    bad = {0x1B, *range(0x80, 0xA0)}
+    if any(ord(ch) in bad or hidden(ord(ch)) for ch in text):
         return False
     for lines in (text.split("\n"), text.splitlines()):
         for ln in lines:

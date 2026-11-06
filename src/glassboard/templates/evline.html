@@ -1,2 +1,24 @@
 {# One canonical line. In a header the bracketed event kind gets its own span (same text) so it can carry the event color. #}
 {% macro evtext(ln) %}{% if ln.cls == "hdr" and "[" in ln.text %}{% set pre, _b, post = ln.text.partition("[") %}{% set kind, _e, rest = post.partition("]") %}<span>{{ pre }}<span class="ev-kind">[{{ kind }}]</span>{{ rest }}</span>{% else %}<span>{{ ln.text }}</span>{% endif %}{% endmacro %}
+
+{# B35: one event as a card. Header: who, what kind, to whom, which task, what it answers; seq and time muted.
+   Body: participant text as paragraphs (left rule only), metadata muted. Canonical text stays in the trace view. #}
+{% macro evcard(ev, s, links=True) %}
+<div class="ev" id="e{{ ev.seq }}" data-event="{{ ev.type }}">
+{% if ev.head %}
+  <div class="ev-head">
+    <span class="actor-badge actor-{{ ev.actor_style }}" title="@{{ ev.actor }}"><span class="actor-mark" aria-hidden="true">{{ ev.actor_mark }}</span><span>{{ ev.actor_name }}</span></span>
+    <span class="ev-kind">{{ ev.head.kind }}</span>
+    {% if ev.type == "question" %}{% if ev.answered %}<span class="ev-state ev-answered">answered</span>{% else %}<span class="ev-state ev-owed">awaiting answer</span>{% endif %}{% endif %}
+    {% if ev.head.to %}<span class="ev-to"><span aria-hidden="true">→</span> {% if ev.head.to|length > 2 %}<details class="ev-recips"><summary>{{ ev.head.to|length }} recipients</summary><span>{% for h in ev.head.to %}@{{ h }}{% if not loop.last %}, {% endif %}{% endfor %}</span></details>{% else %}{% for h in ev.head.to %}{% if h == "all" %}everyone{% else %}@{{ h }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>{% endif %}
+    {% if ev.head.task %}{% if links %}<a class="ev-task" href="/s/{{ s }}/t/{{ ev.head.task }}">T{{ ev.head.task }}</a>{% else %}<span class="ev-task">T{{ ev.head.task }}</span>{% endif %}{% endif %}
+    <span class="ev-meta" title="{{ ev.lines[0].text }}">#{{ ev.seq }} · {{ ev.head.ts }}{% if ev.head.gen %} · g{{ ev.head.gen }}{% endif %}</span>{% if ev.head.run %}<span class="ev-run" title="One run of this agent's client process (its runtime label), not a member or a mention.">{{ ev.head.run }}</span>{% endif %}
+  </div>
+  {% if ev.head.re %}<div class="ev-re">{% if links %}<a href="/s/{{ s }}/conversations?mode=thread&amp;thread={{ ev.head.re }}#message-{{ ev.head.re }}">re #{{ ev.head.re }}</a>{% else %}re #{{ ev.head.re }}{% endif %}{% if ev.head.re_quote %} <span class="ev-re-kind">{{ ev.head.re_quote.type }}</span>{% if ev.head.re_quote.text %} <span class="ev-re-text">«{{ ev.head.re_quote.text }}»</span>{% endif %}{% endif %}</div>{% endif %}
+{% else %}
+  <div class="ln hdr">{{ ev.lines[0].text if ev.lines else "" }}</div>
+{% endif %}
+{% for item in ev.body %}{% if item.kind == "paras" %}<div class="ev-text">{% for para in item.paras %}<p>{% for seg in para %}<span class="seg{% if seg.pre %} pre{% endif %}">{{ seg.text }}</span>{% endfor %}</p>{% endfor %}</div>{% else %}<div class="ln {{ item.cls }}">{{ item.text }}</div>{% endif %}{% endfor %}
+{{ caller() if caller else "" }}
+</div>
+{% endmacro %}

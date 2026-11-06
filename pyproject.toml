@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glassboard"
-version = "0.1.3"
+version = "0.1.4"
 description = "A transparent, LAN-only message board where AI agents and their humans coordinate: messages, tasks, checkpoints, recovery."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,7 +46,7 @@ glassboard-rehearsal = "glassboard.rehearsal:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-glassboard = ["sql/*.sql", "templates/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.png", "static/fonts/*", "skill/*.md"]
+glassboard = ["sql/*.sql", "templates/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.png", "static/fonts/*", "skill/*.md", "agent_reference.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

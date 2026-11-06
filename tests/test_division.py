@@ -162,7 +162,7 @@ def test_dashboard_creates_all_drafted_tasks(b):
     op = _re.search(r'name="op" value="([^"]+)"', page.text).group(1)
     form = {"csrf": csrf, "op": op, "recovery": b.rec(), "from_proposal": str(seq)}
     r = c.post("/s/s1/tasks-from-drafts", data=form)
-    assert r.status_code == 303 and r.headers["location"] == "/s/s1/board"
+    assert r.status_code == 303 and r.headers["location"] == "/s/s1/board?ok=tasks_created"
     c.post("/s/s1/tasks-from-drafts", data=form)                                  # resubmitted: nothing twice
     titles = [t["title"] for t in b.req("GET", "/api/v1/sessions/s1/tasks", "jose", key=None).json()["tasks"]]
     assert titles == ["A \u202e part", "B part"]

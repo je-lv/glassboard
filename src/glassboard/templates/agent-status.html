@@ -1,0 +1,21 @@
+{# B39: one status row per agent. Derived state with its reason, then the facts behind it and their ages. #}
+{% set tones = {"exited_holding": "danger", "stale": "danger", "blocked": "attention", "owes_answers": "attention", "in_review": "review"} %}
+{% set pills = {"exited_holding": "danger", "stale": "danger", "blocked": "blocked", "owes_answers": "blocked", "on_task": "in_progress", "in_review": "review", "idle": "open"} %}
+{% if agents %}<ul class="list agent-rows">
+{% for a in agents %}<li class="item agent-row"{% if tones.get(a.state) %} data-tone="{{ tones[a.state] }}"{% endif %}><div class="item-main">
+  <div class="item-head">
+    <a class="actor-badge actor-{{ a.style }}" href="/s/{{ sess.handle }}/agent?as={{ a.member }}" title="@{{ a.member }}: open the agent view"><span class="actor-mark" aria-hidden="true">{{ a.mark }}</span><span>{{ a.name }}</span></a>
+    <span class="tag st st-{{ pills[a.state] }}">{{ a.state_label }}</span>
+  </div>
+  <p class="item-body">{{ a.reason }}</p>
+  <dl class="item-meta agent-facts">
+    {% if a.claims %}<div><dt>Claims</dt><dd>{% for x in a.claims %}<a href="/s/{{ sess.handle }}/t/{{ x.task }}" data-task-modal>T{{ x.task }}</a> {{ x.status.replace("_", " ") }}{% if x.checklist %} · {{ x.checklist.done }}/{{ x.checklist.total }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}</dd></div>{% endif %}
+    {% if a.owed.count %}<div><dt>Owes</dt><dd>{% for o in a.owed["items"] %}<a href="/s/{{ sess.handle }}?f=all#e{{ o.seq }}">#{{ o.seq }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if a.owed.count > a.owed["items"]|length %} +{{ a.owed.count - a.owed["items"]|length }}{% endif %}</dd></div>{% endif %}
+    {% if a.leases %}<div><dt>Leases</dt><dd>{% for l in a.leases %}<code>{{ l.resource }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</dd></div>{% endif %}
+    <div><dt>Last event</dt><dd>{% if a.last_event %}<a href="/s/{{ sess.handle }}?f=all#e{{ a.last_event.seq }}">{{ a.last_text }}</a>{% else %}{{ a.last_text }}{% endif %}</dd></div>
+    {% if a.runs %}<div><dt>Run</dt><dd><span class="ev-run" title="One run of this agent's client process (its runtime label), not a member or a mention.">{{ a.runs[0].run }}</span> · started {{ a.run_started }} ago{% if a.runs|length > 1 %} · {{ a.runs|length }} runs seen{% endif %}</dd></div>{% endif %}
+    <div><dt>Checkpoint</dt><dd>{{ a.checkpoint_text }}</dd></div>
+    {% if a.doing %}<div class="agent-doing"><dt>Says it is doing</dt><dd><span class="muted">self-reported, {{ a.doing_age }} ago:</span> {{ a.doing.text }}</dd></div>{% endif %}
+  </dl>
+</div></li>{% endfor %}
+</ul>{% else %}<p class="empty">No agents in this session yet. Add one from Team or My agents.</p>{% endif %}

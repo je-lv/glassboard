@@ -64,6 +64,7 @@ RECLAIMERS = rule(ok=("agent_member", "agent_coord", "human_coord"))   # the cla
 POLICY = {
     ("GET", "/health/live"): PUBLIC,
     ("GET", "/api/v1/discovery"): PUBLIC,
+    ("GET", "/docs/agent-reference"): PUBLIC,               # the packaged agent reference (no board data)
     ("GET", "/api/v1/protocol"): PUBLIC,
     ("GET", "/ca.crt"): PUBLIC,
     ("POST", "/api/v1/join"): PUBLIC,                       # redeems an invite code; any bad code is 404 invite_invalid                                              # a public certificate
@@ -121,12 +122,14 @@ POLICY = {
     ("POST", "/api/v1/sessions/{s}/tasks/{t}/review"): rule(ok=("agent_member",)),              # the named reviewer only
     ("GET", "/api/v1/sessions/{s}/decisions"): SESSION_READ,
     ("GET", "/api/v1/sessions/{s}/standup"): SESSION_READ,
+    ("GET", "/api/v1/sessions/{s}/status"): SESSION_READ,
     ("GET", "/api/v1/me/attention"): AUTHENTICATED,                      # only the caller's own items
     ("GET", "/api/v1/me/overview"): AUTHENTICATED,
     ("GET", "/api/v1/sessions/{s}/checkpoints"): SESSION_READ,          # own checkpoint (404 "No such checkpoint." is ok)
     ("POST", "/api/v1/sessions/{s}/checkpoints"): SESSION_WRITE,
     # Waking idle agents (E30): the caller's own demand; agents arm and record inspections; the fence decides the rest.
     ("GET", "/api/v1/sessions/{s}/wake"): SESSION_READ,
+    ("POST", "/api/v1/sessions/{s}/runtime/exited"): SESSION_WRITE,   # B37: reports only; 422 without a runtime
     ("POST", "/api/v1/sessions/{s}/wake/arm"): rule(ok=("agent_member", "agent_coord")),
     ("POST", "/api/v1/sessions/{s}/wake/inspected"): rule(ok=("agent_member", "agent_coord")),
     **{("POST", f"/api/v1/sessions/{{s}}/wake/{op}"): SESSION_WRITE                     # the fence decides (409)
@@ -175,6 +178,7 @@ DASHBOARD_PREFIX = "/s/"                                    # cookie-authenticat
 
 BODIES = {
     ("POST", "/api/v1/sessions/{s}/wake/arm"): lambda ctx: {"adapter": "claude"},
+    ("POST", "/api/v1/sessions/{s}/runtime/exited"): lambda ctx: {"exit_code": 0},
     ("POST", "/api/v1/sessions/{s}/wake/inspected"): lambda ctx: {"generation": 0},
     ("POST", "/api/v1/sessions/{s}/wake/dispatch"): lambda ctx: {"fence": "W1-aaaaaaaaaa", "generation": 1},
     **{("POST", f"/api/v1/sessions/{{s}}/wake/{op}"): (lambda ctx: {"fence": "W1-aaaaaaaaaa", "reason": "r"})

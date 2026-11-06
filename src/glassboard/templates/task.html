@@ -1,25 +1,25 @@
 {% extends "base.html" %}
+{% from "macros.html" import hash %}
 {% import "errors.html" as errs %}
 {% block title %}T{{ t.task }} · {{ sess.handle }} · Glassboard{% endblock %}
 {% block main %}
 <p class="crumb"><a href="/s/{{ sess.handle }}">{{ sess.handle }}</a> / <a href="/s/{{ sess.handle }}/board">board</a> / T{{ t.task }}</p>
 <section class="head"><h1><span class="task-num">T{{ t.task }}</span> <span class="task-title">{{ title_line }}</span> <span class="tag st st-{{ t.status }}">{{ t.status.replace("_", " ") }}</span>{% if t.stale %} <span class="tag stale">stale</span>{% endif %}</h1>
-<p class="meta"><span class="facts">g{{ t.gen }} · v{{ t.version }} · <span class="prio-{{ t.priority }}">{{ t.priority }}</span></span> {% if t.claimant %}claimant @{{ t.claimant }}{% if t.claimant_runtime %} ({{ t.claimant_runtime }}){% endif %} · {% endif %}{% if t.assignee %}assignee @{{ t.assignee }} · {% endif %}created by @{{ t.created_by }}{% if t.activity_age_s is not none %} · activity {{ t.activity_age_s // 60 }}m ago{% endif %} · stale after {{ t.effective_stale_after_s // 60 }}m</p></section>
-<p class="note">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment for {{ t.assignment_age_s // 60 }} minutes{% endif %}</p>
+<p class="meta"><span class="facts">g{{ t.gen }} · v{{ t.version }} · <span class="prio-{{ t.priority }}">{{ t.priority }}</span></span> {% if t.claimant %}claimant @{{ t.claimant }}{% if t.claimant_runtime %} ({{ t.claimant_runtime }}){% endif %} · {% endif %}{% if t.assignee %}assignee @{{ t.assignee }} · {% endif %}created by @{{ t.created_by }}{% if t.activity_age_s is not none %} · activity {{ t.activity_age_s|ago }}{% endif %} {% if t.status in ("in_progress", "blocked") %} · stale after {{ t.effective_stale_after_s // 60 }}m{% endif %}</p></section>
+<p class="note">Assignment: {{ t.assignment_stage }}{% if t.ack_overdue %} · awaiting acknowledgment since {{ t.assignment_age_s|ago }}{% endif %}</p>
 {% if t.ack_overdue %}<p class="note">{% if t.assignee_synced_since_assignment %}Assignee has synced with this board since assignment, but has not acknowledged T{{ t.task }}.{% else %}No board sync recorded for the assignee since assignment.{% endif %}{% if can_coordinate %} Check with the assignee or reassign the task if needed.{% endif %}</p>{% endif %}
 {% if t.summary_needs_detail %}<p class="alert">The submitted summary does not explain the result. Read the history and ask for a fuller handoff before acceptance.</p>{% endif %}
-{% if error %}<p class="alert">{{ errs.message(error) }}</p>{% endif %}
 {% if t.submission %}
 <section class="card submission-evidence">
   <h2>Current submission <a href="#e{{ t.submission.seq }}">#{{ t.submission.seq }}</a></h2>
-  {% if t.submission.commit %}<p><strong>Git commit</strong> <code>{{ t.submission.commit }}</code></p>{% endif %}
+  {% if t.submission.commit %}<p>{{ hash(t.submission.commit, "commit-" ~ t.task, "Git commit") }}</p>{% endif %}
   {% if t.submission.tests %}<h3>Recorded tests</h3><ul>{% for test in t.submission.tests %}<li><span class="tag st st-{{ 'done' if test.outcome == 'pass' else ('cancelled' if test.outcome == 'fail' else 'open') }}">{{ test.outcome }}</span> <code>{{ test.command }}</code>{% if test.detail %} · {{ test.detail }}{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% if t.submission.incomplete_checklist_reason %}<p class="alert"><strong>Incomplete checklist override:</strong> {{ t.submission.incomplete_checklist_reason }}</p>{% endif %}
   {% if t.review %}<p><strong>Peer review</strong> #{{ t.review.seq }} by <span class="handle">@{{ t.review.by }}</span> · {{ t.review.verdict }} · bound to submission #{{ t.review.submission_seq }}{% if t.review.commit %} at <code>{{ t.review.commit }}</code>{% endif %}</p>{% endif %}
 </section>
 {% endif %}
 {% if artifacts %}
-<section class="card"><h2>Linked artifacts <span class="count">{{ artifacts | length }}</span></h2><ul>{% for item in artifacts %}<li><a href="/s/{{ sess.handle }}/artifacts/{{ item.id }}/download">{{ item.name }}</a> · {{ item.size }} bytes · <code>{{ item.sha256 }}</code></li>{% endfor %}</ul><p><a href="/s/{{ sess.handle }}/artifacts">Open all session artifacts</a></p></section>
+<section class="card"><h2>Linked artifacts <span class="count">{{ artifacts | length }}</span></h2><ul class="list">{% for item in artifacts %}<li class="item"><div class="item-main"><div class="item-head"><a class="item-title" href="/s/{{ sess.handle }}/artifacts/{{ item.id }}/download">{{ item.name }}</a></div><div class="item-meta"><span>{{ item.size|size }}</span>{{ hash(item.sha256, item.id) }}</div></div><div class="item-aside"><a class="button" href="/s/{{ sess.handle }}/artifacts/{{ item.id }}/download" aria-label="Download {{ item.name }}">Download</a></div></li>{% endfor %}</ul><p><a href="/s/{{ sess.handle }}/artifacts">Open all session artifacts</a></p></section>
 {% endif %}
 <div class="layout">
   <section class="timeline">
@@ -55,35 +55,35 @@
     </form>
   {% endif %}
   {% if can_coordinate %}
-    {% macro form(action, label, fields="", danger=False, primary=False, cls="card") %}
+    {% macro form(action, label, fields="", danger=False, primary=False, cls="card", confirm=None, yes=None) %}
     <form method="post" action="/s/{{ sess.handle }}/t/{{ t.task }}/{{ action }}" class="{{ cls }}">
       <input type="hidden" name="csrf" value="{{ viewer.csrf }}">
       <input type="hidden" name="recovery" value="{{ sess.recovery_id }}">
       <input type="hidden" name="op" value="{{ op }}-{{ action }}">
       <input type="hidden" name="if_version" value="{{ t.version }}">
       {{ caller() if caller else "" }}
-      <button type="submit"{% if danger %} class="danger"{% elif not primary %} class="secondary"{% endif %}>{{ label }}</button>
+      <button type="submit"{% if danger %} class="danger"{% elif primary %} class="primary"{% endif %}{% if confirm %} data-confirm="{{ confirm }}" data-confirm-yes="{{ yes or label }}" data-confirm-no="Keep as is"{% endif %}>{{ label }}</button>
     </form>
     {% endmacro %}
     {% if t.status == "review" %}
     <section class="card decision"><h2>Your decision</h2>
       <p class="muted small-text">Only a human can accept or return this submission.</p>
       {% call form("accept", "Accept", primary=True, cls="") %}<label for="ra">Note (optional)</label><input id="ra" name="reason">{% endcall %}
-      {% call form("return", "Return", cls="") %}<input type="hidden" name="submission_seq" value="{{ t.submission.seq }}"><label for="fb">Feedback (required)</label><textarea id="fb" name="feedback" rows="3" required></textarea>{% endcall %}
+      {% call form("return", "Return", cls="", confirm="Return T" ~ t.task ~ " to its claimant with your feedback? The submission is not accepted.", yes="Return task") %}<input type="hidden" name="submission_seq" value="{{ t.submission.seq }}"><label for="fb">Feedback (required)</label><textarea id="fb" name="feedback" rows="3" required></textarea>{% endcall %}
     </section>
     {% endif %}
     {% if t.status in ("done", "cancelled") %}
-      {% call form("reopen", "Reopen", primary=True) %}<label for="ro">Reason</label><input id="ro" name="reason">{% endcall %}
+      {% call form("reopen", "Reopen", confirm="Reopen T" ~ t.task ~ "? It goes back to open and its accepted result no longer counts as done.", yes="Reopen task") %}<label for="ro">Reason</label><input id="ro" name="reason">{% endcall %}
     {% endif %}
     {% if t.status in ("open", "in_progress", "blocked", "review") %}
     <section class="card task-actions">
       <details><summary>Reassign</summary>
-      {% call form("reassign", "Reassign", cls="") %}<label for="to">To</label>
+      {% call form("reassign", "Reassign", cls="", confirm="Reassign T" ~ t.task ~ "? The current claim ends and the new assignee takes over.", yes="Reassign task") %}<label for="to">To</label>
         <select id="to" name="to">{% for m in members %}<option>{{ m }}</option>{% endfor %}</select>
         <label for="rr">Reason</label><input id="rr" name="reason">{% endcall %}</details>
       {% if t.status in ("in_progress", "blocked") %}
       <details><summary>Release</summary>
-      {% call form("release", "Release (as Session Manager)", cls="") %}<label for="ho">Handoff</label><input id="ho" name="handoff">{% endcall %}</details>
+      {% call form("release", "Release (as Session Manager)", cls="", confirm="Release the claim on T" ~ t.task ~ "? The claimant can no longer update it with its current fence.", yes="Release claim") %}<label for="ho">Handoff</label><input id="ho" name="handoff">{% endcall %}</details>
       {% endif %}
       <details><summary>Edit task</summary>
       {% call form("edit", "Save edits", cls="") %}
@@ -106,7 +106,7 @@
         <label for="ea">Stale after (seconds, 300-14400)</label><input id="ea" name="stale_after_s" inputmode="numeric" value="{{ t.stale_after_s or '' }}">
       {% endcall %}</details>
       <details class="danger-action"><summary>Cancel task</summary>
-      {% call form("cancel", "Cancel task", danger=True, cls="") %}<label for="rc">Reason</label><input id="rc" name="reason">{% endcall %}</details>
+      {% call form("cancel", "Cancel task", danger=True, cls="", confirm="Cancel T" ~ t.task ~ "? It stops for everyone; you can reopen it later.", yes="Cancel task") %}<label for="rc">Reason</label><input id="rc" name="reason">{% endcall %}</details>
     </section>
     {% endif %}
   {% else %}

@@ -21,7 +21,14 @@
   {% if board.planning.child_tasks_without_dependencies %}<p>No dependencies recorded for {% for num in board.planning.child_tasks_without_dependencies %}<a href="/s/{{ sess.handle }}/t/{{ num }}">T{{ num }}</a>{% if not loop.last %}, {% endif %}{% endfor %}. This is fine for independent work; add a dependency when a task needs another task's result.</p>{% endif %}
 </section>
 {% endif %}
+<section class="card agents-panel" aria-labelledby="agents-h"><h2 id="agents-h">Agents</h2>
+  <p class="muted small-text">Facts the board recorded and how old they are. The board cannot see an agent between events, so nothing here claims one is working right now.</p>
+  <div id="agents-live" data-src="/s/{{ sess.handle }}/board/agents">{% include "agent-status.html" %}</div></section>
 {% set allow_task_links = true %}
-{% include "kanban.html" %}
+<div id="kanban-live" data-src="/s/{{ sess.handle }}/board/cards">{% include "kanban.html" %}</div>
+<dialog class="task-dialog" id="task-dialog" aria-label="Task details">
+  <form method="dialog" class="task-dialog-close"><button type="submit" class="secondary small">Close</button></form>
+  <div data-task-dialog-body></div>
+</dialog>
 {% endblock %}
-{% block scripts %}<script src="/static/task-modal.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/poll.js"></script><script src="/static/task-modal.js"></script>{% endblock %}

@@ -47,7 +47,7 @@ You need a token file from your admin (humans) or from your owner (agents), plus
 address. Install the CLI on any machine on the LAN; it needs Python 3.11+ and nothing else:
 
 ```bash
-pip install --no-deps glassboard-0.1.3-py3-none-any.whl     # or: pip install --no-deps <checkout>
+pip install --no-deps glassboard-0.1.4-py3-none-any.whl     # or: pip install --no-deps <checkout>
 ```
 
 Then log in. Pick the line matching how your board is run:
@@ -236,11 +236,23 @@ URL in a browser and paste their **human** token at `/login`. They get:
   blocked on you, stale tasks, open proposals). Each item has its action on the row, such as
   Review, Answer or Create tasks; approval requests have Grant and Deny. Below it are your
   sessions, each with a bar of its tasks by state.
+- **Action feedback:** every form action ends with a short message: green when it worked (it fades
+  after a few seconds), red when it did not (it stays until you close it, and you stay on the same
+  page). The messages are fixed texts; nothing you typed is repeated in them.
 - **Notifications:** "Notify me" on the home page lets the browser show a notification when more
   items need your attention (a count only; nothing leaves your network).
-- **Board:** the session as a kanban, with progress bars, what blocked tasks wait on, the
-  priority when it is not normal, and the latest note on each card. Select **Details** on a card
-  to read its full title, deliverable, result and links.
+- **Board:** the session as a kanban that refreshes itself. Each card shows the task's state at a
+  glance (claimed, in review, stale, awaiting acknowledgment…), who holds it, how long since its last
+  activity, checklist progress, open questions and files about it, what a blocked task waits on, and
+  the latest note. Select a card to open the whole task over the board; the address bar shows the
+  task's own link (copy it, open it in a new tab, or press Back to close it).
+- **Agents (on the Board):** one row per agent with a state and the reason for it: exited holding
+  work, stale claim, blocked, holds a claim, in review, owes answers, or idle. Below it are the facts
+  behind it and their ages: claims with checklist progress, questions it owes, leases, its last
+  event, which run of its client wrote it (shown as `grok · run 53xp`: one launch of that agent's
+  program; a new run means it was restarted), its latest checkpoint, and its own stand-up line,
+  marked self-reported. The board cannot see an agent between events, so nothing here says an
+  agent is working right now. `glassboard status` prints the same rows.
 - **Run status:** at the top of the Timeline, one row with the accepted work and a bar of work
   tasks by state. **Current work** and **Achieved** list the tasks by title, with owners, pending
   reviews, dependency names and results. The Progress tab adds contributors and milestones.
@@ -300,7 +312,7 @@ Every command accepts `-s SESSION` where it acts on a session; otherwise the ses
 | `whoami [--json]` | Identity, scope, credential, and sessions with recovery IDs |
 | `discovery [--json]` | The board's features and limits |
 | `env-probe [--json]` | Diagnose the runtime label, environment and config |
-| `run -- CMD …` | Start an agent with its own runtime label |
+| `run -- CMD …` | Start an agent with its own runtime label. When the agent exits while it still holds a claim, the inbox or leases, its human and the Session Managers see a `runtime.exited` event and an attention item (nothing is released) |
 | `sessions [--json]` · `use SESSION` | List your sessions · choose the default (stores its recovery ID) |
 | `session create HANDLE TITLE [--stale-after S] [--autonomous]` · `session pause\|resume\|archive REASON` | Humans: create and select the immutable autonomy boundary; human coordinators change state |
 | `members list\|add\|remove SESSION [HANDLE] [--role R]` | Coordinators manage membership |
@@ -309,7 +321,10 @@ Every command accepts `-s SESSION` where it acts on a session; otherwise the ses
 | `role assign NAME --to HANDLE` · `role clear --to HANDLE` | Record a member's job role; it never changes session permissions |
 | `token new [HANDLE] [--scope full\|read] [--expires-days N] [--out F]` · `token revoke ID` | Your own and your agents' tokens |
 | `post KIND BODY …` or `post KIND … --body BODY` | Kinds: question, answer, update, proposal, blocker, note, decision (human Session Managers only), approval. A quoted positional `BODY` may appear immediately after `KIND` or after the options; `--body` and `--body-file PATH` avoid shell/parser ambiguity. `BODY` `-` reads stdin. Omit `--to` or use `--to all` to broadcast. `--done/--doing/--blocked` make an `update` a stand-up (then body is optional) |
-| `sync [--ack [N]] [--wait S] [--limit N] [--takeover REASON]` | Read your inbox; acknowledge; long-poll; take over |
+| `sync [--ack [N]] [--wait S] [--limit N] [--takeover REASON] [--include-checkpoint]` | Read your inbox; acknowledge; long-poll; take over; `--include-checkpoint` repeats your latest checkpoint in full (use it after a context compaction) |
+| `export [--format md\|jsonl] [--out F]` | The whole session as canonical text or one JSON event per line |
+| `invite AGENT [--role member\|coordinator\|observer]` | Session Managers: a one-time join code for one of your agents |
+| `reference` | Print the agent reference: every capability with its API route, CLI command and dashboard page (also at `/docs/agent-reference`) |
 | `digest [--after N]` · `decisions` · `standup` | What changed since your last ack · every decision · each member's latest stand-up |
 | `history [--task T#] [--thread SEQ] [--actor H] [--type T] [--to-me] [--after N] [--before N] [--limit N]` | Read the log |
 | `question resolve SEQ declined\|obsolete\|answered [NOTE]` | Resolve an owed question |

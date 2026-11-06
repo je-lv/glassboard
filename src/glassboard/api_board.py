@@ -156,6 +156,16 @@ def attention(c, p: tokens.Principal) -> dict:
                 if m["owner_id"] == p.id or coord:
                     items.append({"kind": "wake_held", "session": sh, "seq": m["wake_hold_seq"], "from": m["handle"],
                                   "text": m["wake_hold"][:NOTE_CHARS], "age_s": _age_s(m["ts"]) if m["ts"] else 0})
+        if p.kind == "human":                       # B37: an agent's client exited while still holding work
+            from .api_runtime import holding_text, holdings
+            for r in c.execute("SELECT e.seq, e.ts, e.runtime, e.actor_id, a.handle, a.owner_id FROM event e "
+                               "JOIN principal a ON a.id=e.actor_id WHERE e.session_id=? AND e.type='runtime.exited' "
+                               "AND e.ts > ? ORDER BY e.seq", (sid, day_ago)):
+                if (r["owner_id"] == p.id or coord) and r["runtime"]:
+                    h = holdings(c, sid, r["actor_id"], r["runtime"])
+                    if h["claims"] or h["inbox_consumer"]:
+                        items.append({"kind": "runtime_exited", "session": sh, "seq": r["seq"], "from": r["handle"],
+                                      "text": holding_text(h), "age_s": _age_s(r["ts"])})
         if coord:
             rows = c.execute(
                 "SELECT e.* FROM event e WHERE e.session_id=? AND e.type='proposal' AND NOT EXISTS "
@@ -176,7 +186,7 @@ def attention(c, p: tokens.Principal) -> dict:
 
 
 _ATTN = {"review": "review", "review_requested": "your review", "owed": "owed by you", "approval": "approval request", "waiting_on_you": "waiting on you", "stale": "stale", "unacknowledged": "assignment awaiting acknowledgment",
-         "proposal": "proposal", "loop": "loop flag", "wake_held": "wake held"}
+         "proposal": "proposal", "loop": "loop flag", "wake_held": "wake held", "runtime_exited": "agent exited holding work"}
 
 
 def attention_text(a: dict) -> str:

@@ -1,0 +1,2 @@
+{# Shared display helpers (UI analysis 3.8). #}
+{% macro hash(value, uid, label="SHA-256") %}<span class="hash" title="{{ label }} {{ value }}">{{ label }} <code id="hash-{{ uid }}" class="hash-full">{{ value }}</code><code aria-hidden="true">{{ value[:12] }}…</code> <button type="button" class="copy small" data-copy="hash-{{ uid }}">Copy</button></span>{% endmacro %}

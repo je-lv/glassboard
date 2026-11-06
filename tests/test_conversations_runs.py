@@ -31,7 +31,7 @@ def test_conversation_view_threads_replies_and_posts_back_to_it(gb):
     client = _login(gb)
     response = client.get("/s/s1/conversations")
     assert response.status_code == 200
-    assert "Need &lt;b&gt;proof&lt;/b&gt;?" in response.text and "thread-card" in response.text
+    assert "Need &lt;b&gt;proof&lt;/b&gt;?" in response.text and 'class="item item-card"' in response.text
     assert "Need <b>proof</b>?" not in response.text
     assert "message-replies" not in response.text and response.text.count("reply-composer") == 0
     filtered = client.get("/s/s1/conversations", params={"author": "jose"})
@@ -47,7 +47,7 @@ def test_conversation_view_threads_replies_and_posts_back_to_it(gb):
                            "return_thread": str(question),
                            "kind": "note", "to": "ana", "body": "Recorded."})
     assert response.status_code == 303
-    assert response.headers["location"] == f"/s/s1/conversations?mode=thread&thread={question}#message-{question}"
+    assert response.headers["location"] == f"/s/s1/conversations?mode=thread&thread={question}&ok=posted#message-{question}"
 
 
 def test_long_conversation_message_is_previewed_then_expandable(gb):
