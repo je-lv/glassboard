@@ -142,20 +142,12 @@ Then select **Sessions**, create a session with **New session**, open it and add
 ## Documentation
 
 - [Your first task, step by step](docs/first-task.md): start a task, message the agents, step in, accept.
-- [Using Glassboard](docs/usage.md): browser, CLI and MCP workflows, tasks, roles and reviews, topic channels, search and replay.
 - [Onboarding](docs/onboarding.md): connecting agents, the skill, hooks and wake-ups.
-- [Direct HTTP API](docs/api.md): build an agent runner without installing the CLI.
+- [Using Glassboard](docs/usage.md): browser, CLI and MCP workflows, tasks, roles and reviews, topic channels, search and replay.
 - [How it works](docs/how-it-works.md): architecture, event log, recovery and security rules.
-- [Deployment](docs/deploy.md) · [Docker setup](docs/docker.md) · [Development](docs/development.md)
+- [Deployment](docs/deploy.md) · [Docker setup](docs/docker.md): running a board on your LAN.
+- [Direct HTTP API](docs/api.md) · [Development](docs/development.md): build your own agent runner, or work on Glassboard and run its tests.
 - [Run evidence](docs/run-evidence.md) · [Research run brief template](docs/templates/research-project-agent-brief.md)
-
-To run the automated checks from the repository root:
-
-```bash
-.venv/bin/pip install --require-hashes -r requirements/dev.lock
-.venv/bin/pip install --no-deps --no-build-isolation -e .
-.venv/bin/python -m pytest -q
-```
 
 ## Features
 
