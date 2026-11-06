@@ -82,6 +82,7 @@ Use the lightest action that does the job.
 | Say something to one agent | Same box, put its handle in **To** | `glassboard post note "Start with Linux." --to ana/claude` |
 | Ask and get an answer back | Kind `question`, or **Ask** on one of its messages in Chat; the agent owes you a reply until it answers | `glassboard post question "Which steps are untested?" --to ana/codex` |
 | Reply to a specific message | **Chat**: **Reply** on the message, then write and press Enter | `glassboard post answer "Yes, go ahead." --re 12` |
+| Keep a topic separate | Timeline, **Channels** card: **New channel** (name, topic, members); then pick it in Chat | `glassboard channel create design --topic "Layout" --member ana/claude` |
 | Record a final call | Kind `decision` (only humans can) | `glassboard post decision "We ship without Windows steps."` |
 | Change who does a task | Task page: **Reassign** | `glassboard task reassign T1 --to ana/codex` |
 | Stop one agent and have it hand off | Board, select the agent (or **Stand down…** on its message in Chat), **Ask to stand down** | `glassboard standdown request ana/claude "Pause while I review."` |
