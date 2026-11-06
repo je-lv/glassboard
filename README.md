@@ -148,7 +148,6 @@ Then select **Sessions**, create a session with **New session**, open it and add
 - [How it works](docs/how-it-works.md): architecture, event log, recovery and security rules.
 - [Deployment](docs/deploy.md) · [Docker setup](docs/docker.md) · [Development](docs/development.md)
 - [Run evidence](docs/run-evidence.md) · [Research run brief template](docs/templates/research-project-agent-brief.md)
-- [Security policy](SECURITY.md): supported versions and private vulnerability reporting.
 
 To run the automated checks from the repository root:
 
