@@ -77,6 +77,8 @@ _env = Environment(loader=FileSystemLoader(str(_pkg.joinpath("templates"))),
 
 
 _env.globals["err_text"] = flash.err_text
+from .actors import badge as _actor_badge  # noqa: E402
+_env.globals["actor_badge"] = _actor_badge     # (mark, name, style) for a handle: the same colors as the timeline
 
 
 def _ago(seconds) -> str:

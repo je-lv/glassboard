@@ -17,11 +17,11 @@ CATEGORY = {
     "task.acknowledged": "progress", "task.claimed": "progress", "task.note": "progress", "task.checked": "progress",
     "task.unblocked": "progress", "task.reclaimed": "progress",
     "task.submitted": "review", "task.reviewed": "review", "task.returned": "review",
-    "task.accepted": "done", "task.blocked": "danger", "task.cancelled": "danger", "task.declined": "danger",
+    "task.accepted": "done", "task.blocked": "warn", "task.cancelled": "muted", "task.declined": "warn",
     "task.stale": "danger", "task.released": "member", "task.reopened": "member",
     "question": "question", "approval": "question", "hold": "question",
     "answer": "message", "question.resolved": "message", "approval.granted": "done", "approval.denied": "danger",
-    "hold.decided": "message", "hold.expired": "message", "decision": "decision", "blocker": "danger",
+    "hold.decided": "message", "hold.expired": "message", "decision": "decision", "blocker": "warn",
 }
 COL, TOP, ROW, LEFT = 160, 64, 40, 100
 

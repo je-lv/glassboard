@@ -255,7 +255,7 @@ def test_redeemed_invite_is_a_member_but_not_connected_until_first_sync(b):
     assert "Invited · not connected" in login(b, "jose").get("/s/s1").text
     assert join(b, code).status_code == 200
     page = login(b, "jose").get("/s/s1").text
-    assert "Invited · not connected" not in page and "member · not connected" in page
+    assert "Invited · not connected" not in page and "agent · not connected" in page
 
 
 def test_dashboard_add_agent_is_for_coordinators_with_valid_names(b):
@@ -330,7 +330,7 @@ def test_plan_the_work_asks_the_task_manager_for_a_breakdown(b):
     assert "asks the agents for a task breakdown" in page                  # no Task Manager yet: all agents
     api(b, "POST", "/members", "jose", {"handle": "ana/codex", "role": "coordinator"})
     page = c.get("/s/s1").text
-    assert "asks the Task Manager for a task breakdown" in page and "Access: Task Manager</span>" in page
+    assert "asks the Task Manager for a task breakdown" in page and ">Task Manager</span>" in page
     form = re.search(r'<form method="post" action="/s/s1/post" class="plan">(.*?)</form>', page, re.S).group(1)
     data = {m[0]: _html.unescape(m[1]) for m in re.findall(r'name="(\w+)" value="([^"]*)"', form)}
     assert data["to"] == "ana/codex" and data["kind"] == "question"

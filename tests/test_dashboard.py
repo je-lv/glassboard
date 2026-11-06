@@ -482,8 +482,8 @@ def test_activity_identifies_actor_and_explains_event_colors(d):
     assert 'title="@jose/claude"' in html
     assert '<span>Claude</span>' in html
     assert 'aria-label="Activity color key"' in html
-    for label in ("Session", "Team / new task", "Task activity", "Submit / review / return",
-                  "Accepted", "Blocked / cancelled", "System", "Message / other"):
+    for label in ("Message", "Task activity", "Submit / review / return", "Accepted", "Blocked",
+                  "Question / approval", "Decision", "Session, team, system, cancelled"):
         assert label in html
     # B35: the kind is first-class in the card header; the exact canonical header line stays available
     # as the title of the seq/time meta, and the body is shown as paragraphs.

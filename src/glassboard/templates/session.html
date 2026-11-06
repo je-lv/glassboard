@@ -34,22 +34,20 @@
   {% include "timeline.html" %}
   </section>
   <aside>
-    <section class="card" id="channels" aria-labelledby="channels-h">
-      <h2 id="channels-h">Channels <span class="count">{{ channels | length }}</span></h2>
-      <p class="muted small-text">Topics inside this session. They choose whose inbox a message reaches; every message stays in this timeline for everyone.</p>
+    <section class="card side-card" id="channels" aria-labelledby="channels-h">
+      <div class="side-head"><h2 id="channels-h">Channels <span class="count">{{ channels | length }}</span></h2>
+        {% if channel %}<a class="side-link" href="/s/{{ sess.handle }}?{{ all_channels_query }}">Show every channel</a>{% endif %}</div>
       {% if channels %}<ul class="channel-list">{% for ch in channels %}
-        <li class="channel-row{% if ch.archived %} archived{% endif %}">
-          <span class="channel-head"><a href="/s/{{ sess.handle }}?f=all&amp;channel={{ ch.name }}"{% if channel == ch.name %} aria-current="true"{% endif %}>#{{ ch.name }}</a>
-            <span class="muted small-text">{{ ch.members | length }} member{{ "s" if ch.members | length != 1 }}{% if ch.post_policy == "listed" %} · post-only{% endif %}{% if ch.archived %} · archived{% endif %}</span></span>
-          {% if ch.topic_line %}<span class="channel-topic">{{ ch.topic_line }}</span>{% endif %}
-          {% if ch.my_mode and not ch.archived %}<form method="post" action="/s/{{ sess.handle }}/channels/{{ ch.name }}/mode" class="inline channel-mode">
+        <li class="channel-row{% if ch.archived %} archived{% endif %}{% if channel == ch.name %} on{% endif %}">
+          <a class="channel-name" href="/s/{{ sess.handle }}?f=all&amp;channel={{ ch.name }}"{% if channel == ch.name %} aria-current="true"{% endif %}><span class="channel-hash" aria-hidden="true">#</span>{{ ch.name }}</a>
+          <span class="channel-meta">{{ ch.members | length }} member{{ "s" if ch.members | length != 1 }}{% if ch.post_policy == "listed" %} · post-only{% endif %}{% if ch.archived %} · archived{% endif %}</span>
+          {% if ch.topic_line %}<span class="channel-topic" title="{{ ch.topic_line }}">{{ ch.topic_line }}</span>{% endif %}
+          {% if ch.my_mode and not ch.archived %}<form method="post" action="/s/{{ sess.handle }}/channels/{{ ch.name }}/mode" class="channel-mode" aria-label="Your setting for #{{ ch.name }}">
             <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-cm{{ loop.index }}">
-            <label for="cm{{ loop.index }}" class="small-text">You</label>
-            <select id="cm{{ loop.index }}" name="mode">{% for m, lbl in [("follow", "follow"), ("mentions", "mentions only"), ("mute", "mute")] %}<option value="{{ m }}"{% if ch.my_mode == m %} selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>
-            <button type="submit" class="small secondary">Set</button></form>{% endif %}
+            {% for m, lbl in [("follow", "Follow"), ("mentions", "Mentions"), ("mute", "Mute")] %}<button type="submit" name="mode" value="{{ m }}" class="seg{% if ch.my_mode == m %} on{% endif %}" aria-pressed="{{ 'true' if ch.my_mode == m else 'false' }}"{% if m == "mentions" %} title="Only messages that name you reach your inbox"{% endif %}>{{ lbl }}</button>{% endfor %}
+          </form>{% endif %}
         </li>{% endfor %}</ul>
-      {% else %}<p class="muted">No channels yet.</p>{% endif %}
-      {% if channel %}<p class="small-text"><a href="/s/{{ sess.handle }}?{{ all_channels_query }}">Show every channel</a></p>{% endif %}
+      {% else %}<p class="muted small-text">No channels yet. Channels group the talk by topic; every message stays in this timeline.</p>{% endif %}
       {% if can_manage_channels %}<details class="channel-new"><summary>New channel</summary>
         <form method="post" action="/s/{{ sess.handle }}/channels">
           <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-cn">
@@ -59,33 +57,35 @@
           <button type="submit">Create channel</button>
         </form></details>{% endif %}
     </section>
-    <section class="card" id="team">
-      <h2>Team <span class="count">{{ members | length }}</span></h2>
+    <section class="card side-card" id="team">
+      <div class="side-head"><h2>Team <span class="count">{{ members | length }}</span></h2>
+        {% if can_coordinate %}<a class="side-link" href="/s/{{ sess.handle }}/team">Manage</a>{% endif %}</div>
       <ul class="members">
       {% for m in members %}
         {% if m.role == "coordinator" %}{% set access_style = "session-manager" if m.kind == "human" else "task-manager" %}{% set access_title = "Session Manager" if m.kind == "human" else "Task Manager" %}
         {% elif m.role == "member" %}{% set access_style = "contributor" %}{% set access_title = "Contributor" %}
         {% else %}{% set access_style = "viewer" %}{% set access_title = "Viewer" %}{% endif %}
-        <li><span class="presence{% if m.last_seen_at %} on{% endif %}" aria-hidden="true"></span>
-          <span class="mname"><span class="handle">@{{ m.handle }}</span> <span class="mkind">{{ m.kind }}{% if m.display_name != m.handle %} · {{ m.display_name }}{% endif %}</span></span>
-          <span class="mrow"><span class="tag role role-{{ access_style }}">Access: {{ access_title }}</span>{% if m.job_role %} <span class="tag team-job-tag">Project role: {{ m.job_role }} <span class="muted">v{{ m.job_role_version }}</span></span>{% endif %}</span>
-          <span class="msub">{% if m.pending_invite and not m.last_seen_at %}<strong>Invited · not connected</strong>{% elif m.last_seen_at %}<span title="{{ m.last_seen_at[:16].replace('T', ' ') }} UTC">last seen {{ m.last_seen_at|since }}</span>{% elif m.kind == "agent" %}member · not connected{% endif %}{% if m.wake %} · wake supervisor {{ m.wake.state }} ({{ m.wake.adapter }}){% if m.wake.running_since %} · running the client since {{ m.wake.running_since }}Z{% elif m.wake.connected == false %} · <strong>supervisor not connected</strong>{% endif %}{% if m.wake.hold %} · <strong>wake held</strong>: {{ m.wake.hold }}{% elif m.wake.pending %} · <strong>work waiting</strong>{% endif %}{% endif %}</span>
+        {% set ab = actor_badge(m.handle) %}
+        <li class="member{% if m.last_seen_at %} online{% endif %}">
+          <span class="mavatar actor-{{ ab[2] }}" aria-hidden="true">{{ (m.handle[:1] | upper) if ab[2] == "human" else ab[0] }}<span class="presence{% if m.last_seen_at %} on{% endif %}"></span></span>
+          <span class="mname"><span class="handle">@{{ m.handle }}</span>
+            <span class="tag role role-{{ access_style }}" title="Access: what {{ m.handle }} can do in this session">{{ access_title }}</span></span>
+          <span class="msub">{{ m.kind }}{% if m.display_name != m.handle %} · {{ m.display_name }}{% endif %} · {% if m.pending_invite and not m.last_seen_at %}<strong>Invited · not connected</strong>{% elif m.last_seen_at %}<span title="{{ m.last_seen_at[:16].replace('T', ' ') }} UTC">last seen {{ m.last_seen_at|since }}</span>{% elif m.kind == "agent" %}not connected{% else %}not seen yet{% endif %}{% if m.wake %} · wake supervisor {{ m.wake.state }} ({{ m.wake.adapter }}){% if m.wake.running_since %} · running the client since {{ m.wake.running_since }}Z{% elif m.wake.connected == false %} · <strong>supervisor not connected</strong>{% endif %}{% if m.wake.hold %} · <strong>wake held</strong>: {{ m.wake.hold }}{% elif m.wake.pending %} · <strong>work waiting</strong>{% endif %}{% endif %}</span>
+          {% if m.job_role %}<span class="mrow"><span class="tag team-job-tag">Project role: {{ m.job_role }} <span class="muted">v{{ m.job_role_version }}</span></span></span>{% endif %}
         </li>
       {% endfor %}
       </ul>
-      <div class="team-job-roster" aria-labelledby="roles-h">
-        <h3 id="roles-h">Project roles</h3>
-        {% set assigned = [] %}{% set open_roles = [] %}
-        {% for name in role_names %}{% set holders = members | selectattr("job_role", "equalto", name) | list %}{% if holders %}{% set _ = assigned.append((name, holders)) %}{% else %}{% set _ = open_roles.append(name | capitalize) %}{% endif %}{% endfor %}
+      {% set assigned = [] %}{% set open_roles = [] %}
+      {% for name in role_names %}{% set holders = members | selectattr("job_role", "equalto", name) | list %}{% if holders %}{% set _ = assigned.append((name, holders)) %}{% else %}{% set _ = open_roles.append(name | capitalize) %}{% endif %}{% endfor %}
+      {% set unassigned_agents = members | selectattr("kind", "equalto", "agent") | selectattr("job_role", "none") | list %}
+      <details class="team-job-roster" aria-labelledby="roles-h"><summary id="roles-h">Project roles{% if assigned %} · {{ assigned | length }} assigned{% endif %}{% if unassigned_agents %} · {{ unassigned_agents | length }} not recorded{% endif %}</summary>
         {% if assigned %}<dl>{% for name, holders in assigned %}
           <div class="team-job-row{% if name == 'lead' %} team-lead-row{% endif %}"><dt>{{ name | capitalize }}</dt><dd>{% for holder in holders %}<span class="handle">@{{ holder.handle }}</span>{% if not loop.last %}, {% endif %}{% endfor %}</dd></div>
         {% endfor %}</dl>{% endif %}
         {% if open_roles %}<p class="team-open-roles">Not assigned: {{ open_roles | join(", ") }}</p>{% endif %}
-        {% set unassigned_agents = members | selectattr("kind", "equalto", "agent") | selectattr("job_role", "none") | list %}
         {% if unassigned_agents %}<p class="team-open-roles">Project role not recorded for {% for agent in unassigned_agents %}<span class="handle">@{{ agent.handle }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
-        <details class="team-help"><summary>What's this?</summary><p>Project roles describe the work each participant has taken on. Access labels above control what they can do in Glassboard. A Session Manager records roles on the Manage team page.</p></details>
-      </div>
-      {% if can_coordinate %}<p class="team-manage-link"><a href="/s/{{ sess.handle }}/team">Manage team access and project roles</a></p>{% endif %}
+        <p class="team-open-roles">Project roles describe the work each participant has taken on; the access labels control what they can do.{% if can_coordinate %} <a href="/s/{{ sess.handle }}/team">Manage team access and project roles</a>{% endif %}</p>
+      </details>
     </section>
     <section class="card board">
       <h2>Tasks <a href="/s/{{ sess.handle }}/board" class="muted small-text">open the board</a></h2>

@@ -1,16 +1,14 @@
 {% from "evline.html" import evtext, evcard, evrow %}
 <div class="timeline-title"><h2>Activity</h2>
 <div class="timeline-key" aria-label="Activity color key">
-  <span><i class="key-dot key-session" aria-hidden="true"></i>Session</span>
-  <span><i class="key-dot key-member" aria-hidden="true"></i>Team / new task</span>
+  <span><i class="key-dot key-message" aria-hidden="true"></i>Message</span>
   <span><i class="key-dot key-progress" aria-hidden="true"></i>Task activity</span>
   <span><i class="key-dot key-review" aria-hidden="true"></i>Submit / review / return</span>
   <span><i class="key-dot key-done" aria-hidden="true"></i>Accepted</span>
-  <span><i class="key-dot key-danger" aria-hidden="true"></i>Blocked / cancelled</span>
-  <span><i class="key-dot key-system" aria-hidden="true"></i>System</span>
+  <span><i class="key-dot key-blocked" aria-hidden="true"></i>Blocked</span>
   <span><i class="key-dot key-question" aria-hidden="true"></i>Question / approval</span>
   <span><i class="key-dot key-decision" aria-hidden="true"></i>Decision</span>
-  <span><i class="key-dot key-message" aria-hidden="true"></i>Message / other</span>
+  <span><i class="key-dot key-system" aria-hidden="true"></i>Session, team, system, cancelled</span>
 </div><nav class="timeline-order" aria-label="Activity order">
   <a href="/s/{{ sess.handle }}/trace">Forensic trace</a>
   <a href="/s/{{ sess.handle }}?{{ oldest_query }}"{% if order == "oldest" %} aria-current="true"{% endif %}>oldest <span aria-hidden="true">→</span> newest</a>
