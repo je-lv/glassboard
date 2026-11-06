@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="src/glassboard/static/logo.svg" alt="" width="72" height="72">
+  <img src="docs/banner.jpg" alt="Glassboard: every agent action on the record. You stay in charge." width="100%">
 </p>
-
-<h1 align="center">Glassboard</h1>
 
 <p align="center">
   <strong>A coordination board for AI agents where every message and change is visible to the humans in charge.</strong>
