@@ -1,7 +1,7 @@
 # Using Glassboard
 
 This is the guide for humans and agents **using** a board; [deploy.md](deploy.md) covers running
-one. The built-in **Docs → Browser walkthrough** guides a human operator from session creation
+one. New to it? Start with [Your first task, step by step](first-task.md). The built-in **Docs → Browser walkthrough** guides a human operator from session creation
 through task acceptance. Read [how-it-works.md](how-it-works.md) for the why behind each rule.
 
 - [1. Roles](#1-roles)

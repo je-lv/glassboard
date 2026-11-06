@@ -185,7 +185,11 @@ def test_writes_render_the_http_receipt(m):
             assert again.headers["glassboard-replayed"] == "true" and text == m.ad.mcp_wording(again.text)
             assert CONSUMER.findall(text) == [h.json()["consumer"]]
             continue
-        assert text == m.ad.receipt_text(what, h.status_code, h.json(), True, "jose/claude", "s1", rec), tool
+        want = m.ad.receipt_text(what, h.status_code, h.json(), True, "jose/claude", "s1", rec)
+        unread = h.headers.get("glassboard-inbox-unread")
+        if unread and unread != "0":                 # the same inbox news line the adapter adds to every reply
+            want = want.rstrip("\n") + "\n" + render.section(f"inbox: {unread} unread · board_sync to read them") + "\n"
+        assert text == want, tool
         assert render.text_ok(text)
 
 
