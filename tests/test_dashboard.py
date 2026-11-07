@@ -354,8 +354,8 @@ def test_stale_form_after_restore_says_reload(d):
 
 def test_unknown_error_codes_in_the_url_show_no_attacker_text(d):
     c = login(d)
-    r = c.get("/s/s1?err=%3Cscript%3EPWN")
-    assert "PWN" not in r.text
+    r = c.get("/s/s1?err=%3Cscript%3EPWN!")
+    assert "PWN!" not in r.text            # "!" never occurs in random IDs or tokens, so this cannot match by chance
     assert "That did not work." in r.text                     # the fixed default message
 
 
