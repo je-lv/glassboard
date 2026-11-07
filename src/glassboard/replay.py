@@ -60,6 +60,8 @@ def replay(c, sid: str, num: int) -> dict:
         data = v.get("data") or {}
         first = next((ln for ln in (v.get("body") or "").splitlines() if ln.strip()), "")
         detail = first or data.get("summary") or data.get("feedback") or data.get("reason") or data.get("title") or ""
+        if v["type"] == "task.submitted" and data.get("supersedes"):      # E48: a revision says what it replaces
+            detail = f"revises #{int(data['supersedes'])}: {detail}"
         steps.append({"n": i + 1, "seq": v["seq"], "ts": v["ts"], "type": v["type"], "actor": v["actor"],
                       "to": v["to"], "cat": CATEGORY.get(v["type"], "system"), "y": y, "x0": x0,
                       "x_targets": [LEFT + lanes.index(h) * COL for h in targets],

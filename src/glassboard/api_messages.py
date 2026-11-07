@@ -47,6 +47,11 @@ class Draft(StrictModel):
     scope: str = Field(min_length=1, max_length=2000)
     deliverable: str = Field(min_length=1, max_length=512)
     assignee: str | None = Field(default=None, pattern=PRINCIPAL_HANDLE_RE.pattern)
+    reviewer: str | None = Field(default=None, pattern=PRINCIPAL_HANDLE_RE.pattern)     # B70 (ERRATA E48)
+
+    def digest_dump(self) -> dict:
+        """The idempotency payload: `reviewer` only when set, so receipts from before B70 still replay."""
+        return self.model_dump(exclude=set() if self.reviewer is not None else {"reviewer"})
 
 
 MAX_DRAFTS = 10
@@ -148,6 +153,15 @@ def _validate_message(c, sid: str, p: tokens.Principal, role: str, body: Message
         raise ApiError(422, "invalid_request", "The request failed validation.",
                        hint="Task drafts belong in a proposal.",
                        details={"fields": [{"loc": ["body", "drafts"], "type": "not_allowed_for_kind"}]})
+    for i, d in enumerate(body.drafts):                   # B70: like task create, a draft names members only
+        for field in ("assignee", "reviewer"):
+            h = getattr(d, field)
+            if h is not None and not c.execute("SELECT 1 FROM principal p JOIN member m ON m.principal_id = p.id "
+                                               "WHERE p.handle=? AND m.session_id=? AND m.left_at IS NULL",
+                                               (h, sid)).fetchone():
+                raise ApiError(422, "invalid_request", "The request failed validation.",
+                               hint="A draft's assignee and reviewer must be members of this session.",
+                               details={"fields": [{"loc": ["body", "drafts", i, field], "type": "not_member"}]})
     if body.kind == "decision" and (p.kind != "human" or role != "coordinator"):
         raise ApiError(403, "forbidden", "Only a human coordinator may post a decision.")
     if body.channel is not None:
@@ -266,7 +280,7 @@ def send_message(database: db.Database, post_limiter, p: tokens.Principal, s: st
         payload = {"kind": body.kind, "body": body.body, "to": sorted(to_ids), "re": body.re, "task": body.task,
                    "refs": [r.model_dump() for r in body.refs]}           # recipients as sorted IDs
         if body.drafts:                                                   # absent: digests stay as before
-            payload["drafts"] = [d.model_dump() for d in body.drafts]
+            payload["drafts"] = [d.digest_dump() for d in body.drafts]
         if body.standup is not None:
             payload["standup"] = body.standup.model_dump()
         if body.preflight_seq is not None:
@@ -409,8 +423,11 @@ def history(s: str, request: Request, after: int = Query(0, ge=0), before: int |
             actor: str | None = Query(None, max_length=80), type: str | None = Query(None, max_length=40),
             channel: str | None = Query(None, max_length=32),
             to: Literal["me"] | None = Query(None), limit: int = Query(50, ge=1, le=100),
-            format: Literal["json", "text"] = Query("json"),
+            latest: bool = Query(False), format: Literal["json", "text"] = Query("json"),
             p: tokens.Principal = Depends(authenticate), database: db.Database = Depends(get_db)):
+    """Events oldest first after `after`, or with `latest=true` the last `limit` (below `before`); JSON `truncated` says when some are left out.
+    JSON also gives `total`, `first`/`last`, `next_before`/`next_after`; text ends with a `next: partial`
+    line naming the parameter for the rest (ERRATA E47)."""
     with database.read() as c:
         sess, me = require_member(c, s, p)
         where, args = ["e.session_id = :s", "e.seq > :after"], {"s": sess["id"], "after": after}
@@ -436,18 +453,34 @@ def history(s: str, request: Request, after: int = Query(0, ge=0), before: int |
             where.append("e.actor_id != :p AND (EXISTS (SELECT 1 FROM event_recipient r WHERE r.session_id = e.session_id "
                          "AND r.seq = e.seq AND r.principal_id = :p) OR (e.broadcast = 1 AND e.seq > :joined))")
             args.update(p=p.id, joined=me["joined_seq"])
-        rows = c.execute(f"SELECT e.* FROM event e WHERE {' AND '.join(where)} ORDER BY e.seq LIMIT :limit",
+        cond = " AND ".join(where)
+        rows = c.execute(f"SELECT e.* FROM event e WHERE {cond} ORDER BY e.seq{' DESC' if latest else ''} LIMIT :limit",
                          {**args, "limit": limit + 1}).fetchall()
         more, rows = len(rows) > limit, rows[:limit]
+        if latest:
+            rows.reverse()
+        # an oldest-first window can only leave out events after its last one; a latest window, before its first
+        more_before, more_after = (more, False) if latest else (False, more)
+        total = c.execute(f"SELECT COUNT(*) FROM event e WHERE {cond}", args).fetchone()[0] if more else len(rows)
         vs = inbox.views(c, rows)
+    w = history_window(vs, total, limit, latest, more_before, more_after)
     if format == "text" or _wants_text(request, None):
         lines = [render.section(f"--- history · {sess['handle']} · epoch {sess['epoch']} · head #{sess['head_seq']} ---")]
         for v in vs:
             lines.extend(inbox.view_lines(v))
-        if more:
-            lines.append(render.section(f"next: more after #{vs[-1]['seq']} (`after={vs[-1]['seq']}`)"))
+        if w["truncated"]:
+            lines.append(render.section(render.partial_line(w)))
         return PlainTextResponse("\n".join(lines) + "\n")
-    return {"session": sess["handle"], "events": vs, "more": more, "next_after": vs[-1]["seq"] if (more and vs) else None}
+    return {"session": sess["handle"], "events": vs, **w}
+
+
+def history_window(vs: list[dict], total: int, limit: int, latest: bool, more_before: bool, more_after: bool) -> dict:
+    """The B72 fields (additive; `more` and `next_after` keep their meaning: more after the last one)."""
+    first, last = (vs[0]["seq"], vs[-1]["seq"]) if vs else (None, None)
+    return {"more": more_after, "next_after": last if more_after else None,
+            "truncated": more_before or more_after, "window": "latest" if latest else "oldest",
+            "shown": len(vs), "total": total, "first": first, "last": last, "limit": limit,
+            "more_before": more_before, "next_before": first if more_before else None, "more_after": more_after}
 
 
 # --- export ---------------------------------------------------------------------------------

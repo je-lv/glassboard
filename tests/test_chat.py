@@ -124,7 +124,11 @@ def test_b58_channel_filter_keeps_owed_questions_in_view(b):
     html = chat(c, "?channel=design")
     part = stream_part(html)
     assert f'id="m{inside}"' in part and f'id="m{outside}"' not in part
-    assert f'id="m{owed}"' in part and "Still open, from the whole session" in message(html, owed)
+    # B67: a channel view shows only its own messages; open requests from elsewhere fold into one line that names
+    # the ones the viewer owes
+    assert f'id="m{owed}"' not in part
+    line = part.split('class="chat-elsewhere"', 1)[1].split("</p>", 1)[0]
+    assert "1 open request elsewhere" in line and f"you owe: " in line and f"#m{owed}" in line and "«Which licence?»" in line
     assert "chat-marker" not in part
     assert 'class="chip on" href="/s/s1/chat?channel=design"' in html
     assert '<option value="design" selected>#design</option>' in html
@@ -134,7 +138,7 @@ def test_b58_channel_filter_keeps_owed_questions_in_view(b):
     assert r.headers["location"] == "/s/s1/chat?channel=design&ok=posted#chat-end"
     assert b.events()[-1]["channel"] == "design"
     msg(b, "jose", "answer", "MIT", re=owed, to=["ana/codex"])
-    assert f'id="m{owed}"' not in stream_part(chat(c, "?channel=design"))   # answered: no longer pinned
+    assert "chat-elsewhere" not in stream_part(chat(c, "?channel=design"))  # answered: nothing open elsewhere
     assert f'id="m{inside}"' in stream_part(chat(c, "?channel=nope"))         # unknown channel: whole session
 
 
@@ -190,3 +194,80 @@ def test_b58_chat_tab_is_second_with_its_number_key(b):
     assert 'aria-current="page"><span class="tab-key" aria-hidden="true">2</span>Chat' in html
     items = login(b).get("/s/s1/jump.json").json()["items"]
     assert {"kind": "view", "label": "Chat", "href": "/s/s1/chat"} in items
+
+
+def test_0_1_7_side_panel_lists_the_team_with_access_and_presence(b):
+    html = chat(login(b))
+    side = html.split('class="chat-side"', 1)[1]
+    for handle in ("@jose", "@ana", "@jose/claude"):
+        assert handle in side
+    assert "Session Manager" in side and "Contributor" in side
+    assert side.index("@ana") < side.index("@jose/claude")             # humans before agents
+    assert 'data-chat-to-member="jose/claude"' in side and 'data-chat-to-member="jose"' not in side   # never yourself
+
+
+def test_0_1_7_to_prefill_accepts_members_only(b):
+    assert 'value="jose/claude" placeholder' in chat(login(b), "?to=jose/claude")
+    assert 'value="nobody" placeholder' not in chat(login(b), "?to=nobody")
+    assert 'value="jose" placeholder' not in chat(login(b), "?to=jose")        # not to yourself
+
+
+def test_0_1_7_new_channel_from_chat_returns_to_chat(b):
+    c = login(b)
+    html = chat(c)
+    assert "+ New channel" in html
+    r = c.post("/s/s1/channels", data={"csrf": csrf_of(html), "op": "chat-newch-0001", "return_to": "chat",
+                                       "name": "design", "topic": "Layout", "members": "jose/claude"})
+    assert r.status_code == 303 and r.headers["location"].startswith("/s/s1/chat")   # with the success flash
+    assert "#design" in chat(c)
+    r = c.post("/s/s1/channels", data={"csrf": csrf_of(html), "op": "chat-newch-0002", "return_to": "chat",
+                                       "name": "design", "members": ""})
+    assert r.status_code == 303 and r.headers["location"].startswith("/s/s1/chat?err=")
+
+
+def test_0_1_7_viewers_get_no_new_channel_form(b):
+    b.add("s1", "ana", role="observer")
+    assert "+ New channel" not in chat(login(b, "ana"))
+
+
+def _list(html):
+    return html.split("data-chat-channels-box>", 1)[1].split("</div>", 1)[0]
+
+
+def test_b67_channel_list_new_channel_first_then_whole_session_then_channels(b):
+    channel(b, members=("jose", "jose/claude", "ana/codex"))
+    post(b, "jose/claude", "Header spacing", channel="design")
+    c = login(b)
+    html = chat(c, "?channel=design")
+    side = html.split('class="chat-side"', 1)[1]
+    assert side.index("+ New channel") < side.index("Whole session") < side.index("#</span>design")
+    rows = _list(html)
+    assert 'class="chat-ch on unread"' in rows and 'href="/s/s1/chat?channel=design" aria-current="page"' in rows
+    assert 'title="1 unread">1</span>' in rows                         # from the viewer's own read position
+    for m in ("follow", "mentions", "mute"):
+        assert f'name="mode" value="{m}"' in rows
+    assert '<input type="hidden" name="return_to" value="chat">' in rows
+    # the list also rides inside the refresh fragment, so counts stay live
+    part = c.get("/s/s1/chat/stream?channel=design").text
+    assert "<template data-chat-channels-live>" in part and 'title="1 unread"' in part
+
+
+def test_b67_own_posts_do_not_count_and_mode_returns_to_chat(b):
+    channel(b, members=("jose", "jose/claude"))
+    post(b, "jose", "Mine", channel="design")
+    c = login(b)
+    html = chat(c)
+    assert "unread" not in _list(html).split("#</span>design", 1)[1].split("</li>", 1)[0]
+    form = _list(html).split('action="/s/s1/channels/design/mode"', 1)[1].split("</form>", 1)[0]
+    op = form.split('name="op" value="', 1)[1].split('"', 1)[0]
+    r = c.post("/s/s1/channels/design/mode", data={"csrf": csrf_of(html), "op": op, "mode": "mute", "return_to": "chat",
+                                                    "return_channel": "design"})
+    assert r.status_code == 303 and r.headers["location"].startswith("/s/s1/chat?channel=design")
+    assert 'class="chat-ch muted"' in _list(chat(c))
+
+
+def test_b66_chat_is_a_fixed_frame_page(b):
+    c = login(b)
+    html = chat(c)
+    assert 'class="page-wide page-chat"' in html or "page-wide page-chat" in html
+    assert 'class="chat-bar"' in html and 'id="chat-stream"' in html

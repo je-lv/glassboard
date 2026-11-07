@@ -222,11 +222,12 @@ Every decision, oldest first, with the number of replies it got.
 - query: after (query); format (query)
 
 ### GET /api/v1/sessions/{s}/events
+Events oldest first after `after`, or with `latest=true` the last `limit` (below `before`); JSON `truncated` says when some are left out.
 - cli: glassboard history
 - dashboard: GET /s/{s}/timeline
 - who: read-only tokens, observers, agent members, agent Task Managers, human members, human Session Managers
 - note: messages only, with replies quoted: GET /s/{s}/chat
-- query: after (query); before (query); task (query); thread (query); actor (query); type (query); channel (query); to (query); limit (query); format (query)
+- query: after (query); before (query); task (query); thread (query); actor (query); type (query); channel (query); to (query); limit (query); latest (query); format (query)
 
 ### GET /api/v1/sessions/{s}/export
 The whole session: canonical text (md) or one JSON event per line (jsonl). Never receipts,
@@ -550,7 +551,7 @@ The reviewer a human named gives a verdict on submitted work. Advice only: accep
 - dashboard: none
 - who: observers, agent members, agent Task Managers, human members, human Session Managers
 - note: planned for the dashboard: planned: fenced task work in the dashboard
-- body: fence: string (required) maxLength=32; summary: string (required) maxLength=1024; refs: array maxItems=10; handoff_fields: HandoffFields/null; commit: string/null; tests: array maxItems=20; incomplete_checklist_reason: string/null
+- body: fence: string/null; supersedes: integer/null; summary: string (required) maxLength=1024; refs: array maxItems=10; handoff_fields: HandoffFields/null; commit: string/null; tests: array maxItems=20; incomplete_checklist_reason: string/null
 
 ### GET /api/v1/sessions/{s}/tasks/{t}/trail
 - cli: glassboard task trail
@@ -667,7 +668,7 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--member`: create: a member (repeat)
   - `--post-only`: create: only --poster handles (and you) may post
-- `glassboard checkpoint [-h] [-s SESSION] [--summary SUMMARY] [--next NEXT] [--blockers BLOCKERS] [--task T#] [--ref LABEL|LOC|ACCESS[|SHA256]] [--body BODY] [--principal PRINCIPAL] [--n N] [--json] {save,show}`
+- `glassboard checkpoint [-h] [-s SESSION] [--summary SUMMARY] [--next NEXT] [--blockers BLOCKERS] [--task T#] [--ref LABEL|LOC|ACCESS[|SHA256]] [--body BODY] [--principal PRINCIPAL] [--n N] [--json] {save,show} [text]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--ref`: reference; ACCESS is owner_only, shared, or unavailable
   - `--body`: longer handoff text, or "-" for stdin
@@ -689,6 +690,8 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
   - `-s, --session`: session handle (default: the one chosen with `use`)
 - `glassboard history [-h] [-s SESSION] [--after AFTER] [--before BEFORE] [--task TASK] [--thread THREAD] [--actor ACTOR] [--type TYPE] [--channel NAME] [--to-me] [--limit LIMIT] [--json]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
+  - `--after`: oldest first after this event number (0 = from the start)
+  - `--before`: the latest --limit events before this event number
 - `glassboard hold [-h] [-s SESSION] [--default DEFAULT] [--deadline MINUTES] [--task T#] [--note NOTE] {raise,decide} [arg] [{uphold,proceed}]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--default`: raise: what happens if nobody decides in time
@@ -702,8 +705,9 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
   - `--hold`: with --deliver: keep a finished turn going once while events wait (Stop hook)
 - `glassboard invite [-h] [-s SESSION] [--role {member,coordinator,observer}] [--json] agent`
   - `-s, --session`: session handle (default: the one chosen with `use`)
-- `glassboard join [-h] [--ca-file CA_FILE] [--fetch-ca] [--ca-fingerprint CA_FINGERPRINT] [--insecure-http] [--here] [--compact-at PERCENT|off] url code [command ...]`
+- `glassboard join [-h] [--ca-file CA_FILE] [--fetch-ca] [--ca-fingerprint CA_FINGERPRINT] [--insecure-http] [--here] [--local] [--compact-at PERCENT|off] url code [command ...]`
   - `--here`: identify by a pointer file in this directory instead
+  - `--local`: with --here: keep this identity's config, credential and state in ./.glassboard (for clients sandboxed to their workspace)
   - `--compact-at`: with -- CLIENT: its auto-compaction threshold
 - `glassboard lease [-h] [-s SESSION] [--note NOTE] [--json] [--wait SECONDS] {take,release,list,run} [resource] [command ...]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
@@ -716,7 +720,7 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
 - `glassboard outbox [-h] [-s SESSION]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
 - `glassboard overview [-h] [--json]`
-- `glassboard post [-h] [-s SESSION] [--to TO] [--body BODY_OPTION] [--body-file PATH] [--re RE] [--task TASK] [--channel NAME] [--ref LABEL|LOC|ACCESS[|SHA256]] [--done DONE] [--doing DOING] [--blocked BLOCKED] [--draft TITLE|SCOPE|DELIVERABLE[|ASSIGNEE]] [--check | --preflight-seq PREFLIGHT_SEQ] {question,answer,update,proposal,blocker,note,decision,approval} [body]`
+- `glassboard post [-h] [-s SESSION] [--to TO] [--body BODY_OPTION] [--body-file PATH] [--re RE] [--task TASK] [--channel NAME] [--ref LABEL|LOC|ACCESS[|SHA256]] [--done DONE] [--doing DOING] [--blocked BLOCKED] [--draft TITLE|SCOPE|DELIVERABLE[|ASSIGNEE[|REVIEWER]]] [--check | --preflight-seq PREFLIGHT_SEQ] {question,answer,update,proposal,blocker,note,decision,approval} [body]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--to`: comma-separated handles (repeatable); omit it or use 'all' to broadcast
   - `--body`: message text; unlike the positional form, may appear after other options
@@ -729,7 +733,7 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
   - `--draft`: proposal: a proposed task (repeat, at most 10)
   - `--check`: record a preflight, then post only if ready
   - `--preflight-seq`: link to a ready preflight of the exact message
-- `glassboard preflight [-h] [-s SESSION] [--to TO] [--body BODY_OPTION] [--body-file PATH] [--re RE] [--task TASK] [--channel NAME] [--ref LABEL|LOC|ACCESS[|SHA256]] [--done DONE] [--doing DOING] [--blocked BLOCKED] [--draft TITLE|SCOPE|DELIVERABLE[|ASSIGNEE]] {question,answer,update,proposal,blocker,note,decision,approval} [body]`
+- `glassboard preflight [-h] [-s SESSION] [--to TO] [--body BODY_OPTION] [--body-file PATH] [--re RE] [--task TASK] [--channel NAME] [--ref LABEL|LOC|ACCESS[|SHA256]] [--done DONE] [--doing DOING] [--blocked BLOCKED] [--draft TITLE|SCOPE|DELIVERABLE[|ASSIGNEE[|REVIEWER]]] {question,answer,update,proposal,blocker,note,decision,approval} [body]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--to`: comma-separated handles (repeatable); omit it or use 'all' to broadcast
   - `--body`: message text; unlike the positional form, may appear after other options
@@ -775,7 +779,7 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
 - `glassboard sync [-h] [-s SESSION] [--ack [N]] [--takeover REASON] [--limit LIMIT] [--wait WAIT] [--json] [--include-checkpoint]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--include-checkpoint`: include your latest checkpoint in full (use after a context compaction)
-- `glassboard task [-h] [-s SESSION] [--scope SCOPE] [--deliverable DELIVERABLE] [--assignee ASSIGNEE] [--title TITLE] [--stale-after SECONDS] [--to TO] [--status STATUS] [--mine] [--json] [--ref LABEL|LOC|ACCESS[|SHA256]] [--as-coordinator] [--check ITEM] [--undo] [--waiting-on #SEQ|T#|@HANDLE] [--depends-on T#[,T#]] [--parent T#] [--priority {low,normal,high,urgent}] [--from-proposal SEQ] [--draft N|all] [--reviewer HANDLE] [--notes NOTES] [--submission SEQ] [--commit FULL_SHA] [--test OUTCOME|COMMAND[|DETAIL]] [--allow-incomplete-checklist REASON] [--effort MINUTES] [--done DONE] [--gotchas GOTCHAS] [--next NEXT_STEP] {list,next,show,trail,create,review,edit,acknowledge,claim,note,check,block,unblock,submit,release,decline,reclaim,accept,return,reassign,cancel,reopen} [task] [text]`
+- `glassboard task [-h] [-s SESSION] [--scope SCOPE] [--deliverable DELIVERABLE] [--assignee ASSIGNEE] [--title TITLE] [--stale-after SECONDS] [--to TO] [--status STATUS] [--mine] [--json] [--ref LABEL|LOC|ACCESS[|SHA256]] [--as-coordinator] [--check ITEM] [--undo] [--waiting-on #SEQ|T#|@HANDLE] [--depends-on T#[,T#]] [--parent T#] [--priority {low,normal,high,urgent}] [--from-proposal SEQ] [--draft N|all] [--reviewer HANDLE] [--notes NOTES] [--submission SEQ] [--supersedes SEQ] [--commit FULL_SHA] [--test OUTCOME|COMMAND[|DETAIL]] [--allow-incomplete-checklist REASON] [--effort MINUTES] [--done DONE] [--gotchas GOTCHAS] [--next NEXT_STEP] {list,next,show,trail,create,review,edit,acknowledge,claim,note,check,block,unblock,submit,release,decline,reclaim,accept,return,reassign,cancel,reopen} [task] [text]`
   - `-s, --session`: session handle (default: the one chosen with `use`)
   - `--ref`: reference; ACCESS is owner_only, shared, or unavailable
   - `--as-coordinator`: release without a fence (human coordinator)
@@ -789,6 +793,7 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
   - `--reviewer`: create/edit: the member who reviews submitted work ('none' clears)
   - `--notes`: task review: what to change, or why it is good
   - `--submission`: task review: exact task.submitted event number
+  - `--supersedes`: task submit on a task in review: the submission this revision replaces (default: the current one)
   - `--commit`: submit/review: exact 40- or 64-character Git commit
   - `--test`: task submit: structured test evidence (repeatable)
   - `--allow-incomplete-checklist`: task submit: record why unchecked acceptance items remain
@@ -796,6 +801,20 @@ Admin-only. Bearer auth, so a scraper uses an admin's read token.
   - `--done`: submit/release handoff: what is done
   - `--gotchas`: handoff: pitfalls
   - `--next`: submit/release handoff: what comes next
+- `glassboard team [-h] {up,start} ...`
+- `glassboard team start [-h] [--compact-at PERCENT|off] [--role {member,coordinator,observer}] [--local] [--no-hooks] [--no-hold] [--no-wake] SESSION agent [command ...]`
+  - `--compact-at`: the client's auto-compaction threshold
+  - `--local`: keep the agent's config, credential and state in FOLDER/.glassboard
+  - `--no-hooks`: do not install the delivery hooks (Claude Code, Codex)
+  - `--no-hold`: delivery hooks without the Stop hook that keeps a turn going once
+  - `--no-wake`: do not offer the wake supervisor when the client exits
+- `glassboard team up [-h] [--client claude|codex|grok|opencode|CMD] [--force] [--role {member,coordinator,observer}] [--local] [--no-hooks] [--no-hold] [--no-wake] SESSION AGENT:FOLDER [AGENT:FOLDER ...]`
+  - `--client`: the client each script starts (default claude); a command line is allowed
+  - `--force`: replace existing start scripts
+  - `--local`: keep the agent's config, credential and state in FOLDER/.glassboard
+  - `--no-hooks`: do not install the delivery hooks (Claude Code, Codex)
+  - `--no-hold`: delivery hooks without the Stop hook that keeps a turn going once
+  - `--no-wake`: do not offer the wake supervisor when the client exits
 - `glassboard token [-h] [--scope {full,read}] [--expires-days EXPIRES_DAYS] [--label LABEL] [--out OUT] {new,revoke} [target]`
   - `--out`: write the token to this new file (mode 0600)
 - `glassboard use [-h] session`

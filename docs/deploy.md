@@ -382,7 +382,7 @@ The API is versioned (`/api/v1`). Update participants' CLIs with the same
 | `GLASSBOARD_WAKE_GENERATION` | CLI | – | Set by `glassboard wake run` for the client it resumes; `glassboard wake done` records that generation |
 | `GLASSBOARD_PROFILE` | CLI | – | Act as this joined identity (set by `glassboard join … -- CLIENT`; same as `--as`) |
 | `GLASSBOARD_CLIENTS` | CLI | `claude,codex` | Extra process names counted as agent clients when `glassboard join` binds an identity |
-| `GLASSBOARD_BASE_CONFIG`, `GLASSBOARD_RUNTIME_STATE`, `GLASSBOARD_PROFILE_SOURCE` | CLI | – | Set by the CLI itself when a profile is active (where profiles live; why this one was chosen). Do not set them by hand |
+| `GLASSBOARD_BASE_CONFIG`, `GLASSBOARD_RUNTIME_STATE`, `GLASSBOARD_PROFILE_SOURCE`, `GLASSBOARD_PROFILE_ROOT` | CLI | – | Set by the CLI itself when a profile is active (where profiles live; why this one was chosen; the folder of a workspace-local profile from `join --here --local`). Do not set them by hand |
 | `GLASSBOARD_TEST_FAULT` | app | – | Test-only crash hook. **Never set it**; it can only make the process exit |
 
 ## Troubleshooting

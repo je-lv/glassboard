@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}page-wide{% endblock %}
 {% import "errors.html" as errs %}
 {% block title %}{{ sess.handle }} · Glassboard{% endblock %}
 {% block main %}
@@ -52,7 +53,7 @@
         <form method="post" action="/s/{{ sess.handle }}/channels">
           <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-cn">
           <label for="cname">Name</label><input id="cname" name="name" required maxlength="32" pattern="[a-z0-9][a-z0-9\-]{0,31}" placeholder="design">
-          <label for="ctopic">Topic</label><input id="ctopic" name="topic" maxlength="200">
+          <label for="ctopic">Topic</label><input id="ctopic" name="topic" maxlength="200" autocomplete="off">
           <label for="cmembers">Members (comma-separated handles)</label><input id="cmembers" name="members" autocomplete="off">
           <button type="submit">Create channel</button>
         </form></details>{% endif %}

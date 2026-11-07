@@ -25,6 +25,12 @@ from glassboard.app import create_app
 
 from conftest import free_port
 
+
+def _pythonpath() -> dict:
+    """A source-tree run (PYTHONPATH=src) tests that tree's CLI in subprocesses too."""
+    return {"PYTHONPATH": os.environ["PYTHONPATH"]} if os.environ.get("PYTHONPATH") else {}
+
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 needs_openssl = pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl CLI not installed")
 
@@ -73,7 +79,7 @@ def cli(env, *args, stdin=None):
 def home(tmp, who="jose-claude"):
     h = tmp / f"home-{who}"
     h.mkdir(exist_ok=True)
-    return {"PATH": os.environ["PATH"], "HOME": str(h), "XDG_CONFIG_HOME": str(h / "cfg"), "XDG_STATE_HOME": str(h / "st")}
+    return {"PATH": os.environ["PATH"], **_pythonpath(), "HOME": str(h), "XDG_CONFIG_HOME": str(h / "cfg"), "XDG_STATE_HOME": str(h / "st")}
 
 
 # --- tlsboot ---------------------------------------------------------------------------------------

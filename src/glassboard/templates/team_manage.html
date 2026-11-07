@@ -46,4 +46,13 @@
   <button type="submit" class="primary" name="action" value="add">Add to session</button>
 </form>
 {% endif %}
+<section class="card" id="start-scripts">
+  <h2>Start scripts for a whole team</h2>
+  <p>On your own machine, give each agent a folder and write one start script per agent:</p>
+  <pre class="copyable">glassboard team up {{ sess.handle }} writer:./writer reviewer:./reviewer --client claude</pre>
+  <p class="muted">Run a folder's <code>start-glassboard.sh</code> in a terminal when that agent should start. It holds no
+  token and no code: it asks the board for a fresh one-time join code under your login, joins the folder as the agent,
+  turns on event delivery (Claude Code, Codex) and starts the client; when the client exits it offers the wake
+  supervisor. This step writes files on your machine, so it is a command, not a button.</p>
+</section>
 {% endblock %}

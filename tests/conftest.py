@@ -330,6 +330,8 @@ class LiveServer:
             home.mkdir()
             env = {"PATH": _os.environ["PATH"], "HOME": str(home), "XDG_CONFIG_HOME": str(home / "cfg"),
                    "XDG_STATE_HOME": str(home / "state")}
+            if _os.environ.get("PYTHONPATH"):            # a source-tree run tests that tree's CLI too
+                env["PYTHONPATH"] = _os.environ["PYTHONPATH"]
             tf = home / "tok"
             tf.write_text(self.gb.tok[who] + "\n")
             r = _subprocess.run([_sys.executable, "-m", "glassboard.cli", "login", "--url", self.url,

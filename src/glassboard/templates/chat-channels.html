@@ -1,0 +1,24 @@
+{# B67: the Chat channel list (side panel). + New channel first, then Whole session, then every channel the viewer can
+   read with its unread count (from the viewer's own read position) and their mode. Also sent inside the 5-second
+   stream refresh so counts stay live (chat.js moves it into the panel). #}
+{% macro row(ch) %}{% set sh = sess.handle %}{% set evq = "" if show_events else "events=0" %}
+  <li class="chat-ch{% if channel == ch.name %} on{% endif %}{% if ch.unread %} unread{% endif %}{% if ch.my_mode == 'mute' %} muted{% endif %}">
+    <a class="chat-ch-name" href="/s/{{ sh }}/chat?channel={{ ch.name }}{% if evq %}&amp;{{ evq }}{% endif %}"{% if channel == ch.name %} aria-current="page"{% endif %}{% if ch.topic_line %} title="{{ ch.topic_line }}"{% endif %}><span class="channel-hash" aria-hidden="true">#</span>{{ ch.name }}</a>
+    {% if ch.unread %}<span class="chat-ch-count" title="{{ ch.unread }} unread">{{ ch.unread }}</span>{% endif %}
+    {% if ch.my_mode and not ch.archived and can_post %}<form method="post" action="/s/{{ sh }}/channels/{{ ch.name }}/mode" class="channel-mode chat-ch-mode" aria-label="Your setting for #{{ ch.name }}">
+      <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-cm-{{ ch.name }}">
+      <input type="hidden" name="return_to" value="chat">{% if channel %}<input type="hidden" name="return_channel" value="{{ channel }}">{% endif %}
+      {% for m, lbl, short in [("follow", "Follow", "F"), ("mentions", "Mentions", "@"), ("mute", "Mute", "M")] %}<button type="submit" name="mode" value="{{ m }}" class="seg{% if ch.my_mode == m %} on{% endif %}" aria-pressed="{{ 'true' if ch.my_mode == m else 'false' }}" title="{{ lbl }}{% if m == 'mentions' %}: only messages that name you reach your inbox{% endif %}" aria-label="{{ lbl }}">{{ short }}</button>{% endfor %}
+    </form>{% endif %}
+  </li>
+{% endmacro %}
+{% set sh = sess.handle %}{% set evq = "" if show_events else "events=0" %}
+<ul class="chat-channels" data-chat-channels>
+  <li class="chat-ch chat-ch-all{% if not channel %} on{% endif %}{% if session_unread %} unread{% endif %}">
+    <a class="chat-ch-name" href="/s/{{ sh }}/chat{% if evq %}?{{ evq }}{% endif %}"{% if not channel %} aria-current="page"{% endif %}>Whole session</a>
+    {% if session_unread %}<span class="chat-ch-count" title="{{ session_unread }} unread">{{ session_unread }}</span>{% endif %}
+  </li>
+  {% for ch in open_channels %}{{ row(ch) }}{% endfor %}
+</ul>
+{% if archived_channels %}<details class="chat-ch-archived" data-persist="chat-archived"><summary>Archived ({{ archived_channels | length }})</summary>
+  <ul class="chat-channels">{% for ch in archived_channels %}{{ row(ch) }}{% endfor %}</ul></details>{% endif %}

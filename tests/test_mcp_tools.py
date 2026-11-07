@@ -139,10 +139,13 @@ def test_reads_equal_http_text(m):
            summary="FAQ 3/10", next_action="Write Q4", task_nums=["T1"])
     pairs = [
         (("board_whoami", {}), ("GET", "/api/v1/whoami?format=text")),
-        (("board_history", {"session": "s1"}), ("GET", "/api/v1/sessions/s1/events?format=text")),
+        (("board_history", {"session": "s1"}), ("GET", "/api/v1/sessions/s1/events?latest=true&format=text")),
         (("board_history", {"session": "s1", "task": "T1", "after": 2, "limit": 3}),
          ("GET", "/api/v1/sessions/s1/events?task=T1&after=2&limit=3&format=text")),
-        (("board_history", {"session": "s1", "to_me": True}), ("GET", "/api/v1/sessions/s1/events?to=me&format=text")),
+        (("board_history", {"session": "s1", "to_me": True}), ("GET", "/api/v1/sessions/s1/events?latest=true&to=me&format=text")),
+        (("board_history", {"session": "s1", "limit": 2}), ("GET", "/api/v1/sessions/s1/events?latest=true&limit=2&format=text")),
+        (("board_history", {"session": "s1", "after": 0, "limit": 2}),
+         ("GET", "/api/v1/sessions/s1/events?after=0&limit=2&format=text")),
         (("board_tasks", {"session": "s1"}), ("GET", "/api/v1/sessions/s1/tasks?format=text")),
         (("board_tasks", {"session": "s1", "mine": True}), ("GET", "/api/v1/sessions/s1/tasks?mine=true&format=text")),
         (("board_checkpoint", {"session": "s1", "action": "show"}), ("GET", "/api/v1/sessions/s1/checkpoints?format=text")),
@@ -253,6 +256,22 @@ def test_errors_equal_http_text(m):
         assert no_request_id(text) == m.ad.mcp_wording(no_request_id(h.text)), tool
         assert render.text_ok(text) and m.gb.head() == head
     assert not FENCE.search(text) and not CONSUMER.search(text)
+
+
+def test_b72_mcp_history_marks_truncation_explicitly(m):
+    head = m.gb.head()
+    err, text = m.tool("jose/claude", "board_history", session="s1", limit=2)
+    assert not err and render.text_ok(text)
+    assert text.rstrip("\n").split("\n")[-1] == (
+        f"next: partial: showing the latest 2 of {head} events (#{head - 1}-#{head}); earlier: "
+        f"call board_history with before={head - 1} (repeat your other arguments; limit up to 100)")
+    err, text = m.tool("jose/claude", "board_history", session="s1", before=head - 1, limit=2)
+    assert f"(#{head - 3}-#{head - 2})" in text
+    err, text = m.tool("jose/claude", "board_history", session="s1", after=0, limit=2)
+    assert text.rstrip("\n").split("\n")[-1].startswith("next: partial: showing the first 2 of ")
+    assert "later: call board_history with after=2" in text
+    err, text = m.tool("jose/claude", "board_history", session="s1", limit=100)
+    assert "partial" not in text
 
 
 def test_mcp_wording_only_touches_whole_server_lines(m):
@@ -449,6 +468,37 @@ def test_coordination_via_mcp(m):
     err, text = m.tool("ana/codex", "board_task", session="s1", recovery=m.rec(), op="op-rev-r1", task=f"T{n}",
                        action="review", verdict="approve", text="good", submission_seq=submitted, commit=commit)
     assert not err and "verdict approve" in text, text
+
+
+def test_b70_b71_draft_reviewer_and_revision_via_mcp(m):
+    err, text = m.tool("jose/claude", "board_post", session="s1", recovery=m.rec(), op="op-drafts-r1", kind="proposal",
+                       body="Split", drafts=[{"title": "Part A", "scope": "s", "deliverable": "d", "reviewer": "ana/codex"}])
+    assert not err, text
+    err, hist = m.tool("jose", "board_history", session="s1")
+    assert "  · draft: «1. Part A · deliverable: d · review by @ana/codex»" in hist
+    r = m.http("POST", "/api/v1/sessions/s1/tasks", "ana", {"title": "Part A", "scope": "s", "deliverable": "d",
+                                                             "assignee": "jose/claude", "reviewer": "ana/codex"},
+               key="mk-revise-1", rec=m.rec())
+    n = r.json()["task"]
+    fence, _ = claim(m, task=f"T{n}", op="claim-op-v1")
+    err, text = m.tool("jose/claude", "board_task", session="s1", recovery=m.rec(), op="op-sub-v1", task=f"T{n}",
+                       action="submit", text="first version", fence=fence)
+    assert not err, text
+    first = m.gb.events()[-1]["seq"]
+    err, text = m.tool("jose/claude", "board_task", session="s1", recovery=m.rec(), op="op-sub-v2", task=f"T{n}",
+                       action="submit", text="second version")
+    assert err and "fence" in text                                     # neither a fence nor supersedes
+    err, text = m.tool("jose/claude", "board_task", session="s1", recovery=m.rec(), op="op-sub-v3", task=f"T{n}",
+                       action="submit", text="second version", supersedes=first)
+    assert not err, text
+    ev = m.gb.events()[-1]
+    assert ev["type"] == "task.submitted" and ev["data"]["supersedes"] == first
+    err, text = m.tool("ana/codex", "board_task", session="s1", recovery=m.rec(), op="op-rev-v1", task=f"T{n}",
+                       action="review", verdict="approve", submission_seq=first)
+    assert err and text.startswith("ERROR submission_mismatch:")
+    err, text = m.tool("ana/codex", "board_task", session="s1", recovery=m.rec(), op="op-rev-v2", task=f"T{n}",
+                       action="review", verdict="approve", submission_seq=ev["seq"])
+    assert not err, text
 
 
 def test_b41_hold_and_decline_through_mcp(m):

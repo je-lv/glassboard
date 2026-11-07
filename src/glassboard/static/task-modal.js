@@ -63,6 +63,20 @@
     show(path, true);
   });
 
+  // The whole kanban card opens its task (B65). Links, buttons and form controls inside it keep their own action, and a
+  // click that ends a text selection does nothing. The title link stays the card's one focus stop (and works without JS).
+  document.addEventListener("click", function (event) {
+    var card = event.target.closest("[data-card-link]");
+    if (!card || event.defaultPrevented || event.button !== 0) { return; }
+    if (event.target.closest("a, button, input, select, textarea, summary, label, [contenteditable]")) { return; }
+    var selection = window.getSelection && window.getSelection();
+    if (selection && !selection.isCollapsed && card.contains(selection.anchorNode)) { return; }
+    var link = card.querySelector("a[data-card-target]");
+    if (!link) { return; }
+    if (event.metaKey || event.ctrlKey) { window.open(link.href, "_blank", "noopener"); return; }
+    link.click();
+  });
+
   dialog.addEventListener("click", function (event) {
     if (event.target === dialog) { dialog.close(); }        // a click on the backdrop
   });

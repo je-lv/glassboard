@@ -3,6 +3,7 @@
 {% set sh = sess.handle %}{% set chq = "&channel=" ~ channel if channel else "" %}
 {% if chat.more %}<p class="chat-more">Showing the latest {{ chat.count }} messages. Older ones are in <a href="/s/{{ sh }}/conversations?mode=all">Conversations</a> and the <a href="/s/{{ sh }}">Timeline</a>.</p>{% endif %}
 {% if not chat["items"] %}<p class="chat-empty muted">{% if channel %}No messages in #{{ channel }} yet.{% else %}No messages yet.{% endif %}{% if can_post %} Write the first one below.{% endif %}</p>{% endif %}
+{% if chat.elsewhere %}<p class="chat-elsewhere"><a href="/s/{{ sh }}/chat">{{ chat.elsewhere.count }} open request{{ "s" if chat.elsewhere.count != 1 }} elsewhere</a>{% if chat.elsewhere.mine %} · you owe: {% for q in chat.elsewhere.mine %}<a href="/s/{{ sh }}/chat{% if q.channel %}?channel={{ q.channel }}{% endif %}#m{{ q.seq }}">@{{ q.actor }} {{ q.type }} #{{ q.seq }}{% if q.text %} «{{ q.text }}»{% endif %}{% if q.channel %} in #{{ q.channel }}{% endif %}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</p>{% endif %}
 <ol class="chat-list">
 {% for it in chat["items"] %}
 {% if it.kind == "marker" %}
@@ -32,3 +33,4 @@
 {% endfor %}
 </ol>
 <div id="chat-end"></div>
+<template data-chat-channels-live>{% include "chat-channels.html" %}</template>

@@ -12,14 +12,28 @@
   // The browser would put a reload back where the reader was; Chat opens at the newest message instead.
   if ("scrollRestoration" in window.history) { window.history.scrollRestoration = "manual"; }
 
+  // B66: on wide screens the page is a fixed frame and only the message list scrolls; on narrow screens the list
+  // has its own scroll box too. Either way the page itself never jumps: we scroll the list, not the window.
   function atBottom() {
-    var doc = document.documentElement;
-    return window.innerHeight + window.scrollY >= doc.scrollHeight - 48;
+    return stream.scrollTop + stream.clientHeight >= stream.scrollHeight - 48;
   }
 
   function toBottom() {
-    window.scrollTo(0, document.documentElement.scrollHeight);
+    stream.scrollTop = stream.scrollHeight;
     if (jump) { jump.hidden = true; }
+  }
+
+  // B67: the channel list (unread counts, modes) comes inside each stream refresh; move it into the side panel.
+  var channelsBox = document.querySelector("[data-chat-channels-box]");
+  function syncChannels() {
+    var live = stream.querySelector("template[data-chat-channels-live]");
+    if (!live || !channelsBox) { return; }
+    var openArchived = channelsBox.querySelector("details[data-persist][open]");
+    channelsBox.replaceChildren(live.content.cloneNode(true));
+    if (openArchived) {
+      var d = channelsBox.querySelector("details[data-persist]");
+      if (d) { d.open = true; }
+    }
   }
 
   // On load: the newest message, unless the address points at a message.
@@ -28,17 +42,27 @@
   else if (hash === "#composer" && form) {
     toBottom();
     var body = form.querySelector("[data-chat-body]");
-    if (body) { body.focus(); }
+    if (body) { body.focus({ preventScroll: true }); }
+  } else {
+    var target = /^#m\d+$/.test(hash) ? document.getElementById(hash.slice(1)) : null;
+    if (target) { stream.scrollTop = target.offsetTop - 16; }
   }
 
-  window.addEventListener("scroll", function () {
+  stream.addEventListener("scroll", function () {
     if (atBottom() && jump) { jump.hidden = true; }
   }, { passive: true });
 
-  stream.addEventListener("glassboard:before-update", function () { pinned = atBottom(); });
+  // The newest message's number: "New messages below" shows only when a refresh really brought one.
+  function lastSeq() {
+    var all = stream.querySelectorAll(".chat-msg[data-seq]");
+    return all.length ? Number(all[all.length - 1].dataset.seq) : 0;
+  }
+  var seenSeq = 0;
+  stream.addEventListener("glassboard:before-update", function () { pinned = atBottom(); seenSeq = lastSeq(); });
   stream.addEventListener("glassboard:updated", function () {
+    syncChannels();
     if (pinned) { toBottom(); }
-    else if (jump) { jump.hidden = false; }
+    else if (jump && lastSeq() > seenSeq) { jump.hidden = false; }
   });
   if (jump) { jump.addEventListener("click", toBottom); }
 
@@ -74,6 +98,15 @@
     if (!msg || !/^\d+$/.test(msg.dataset.seq || "")) { return; }
     e.preventDefault();
     setTarget(msg.dataset.seq, msg.dataset.actor || "", msg.dataset.type || "", link.hasAttribute("data-chat-ask"));
+  });
+
+  // The @ beside a member in the side panel writes to that member.
+  document.addEventListener("click", function (e) {
+    var link = e.target.closest("a[data-chat-to-member]");
+    if (!link || !to || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
+    e.preventDefault();
+    to.value = link.getAttribute("data-chat-to-member");
+    bodyBox.focus({ preventScroll: true });
   });
 
   var clear = form.querySelector("[data-chat-clear]");

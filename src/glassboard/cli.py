@@ -243,22 +243,15 @@ def _fetch_ca(a, config_dir: str) -> str:
     return path
 
 
-def cmd_join(a) -> int:
-    """Redeem an invite code: this agent's own identity (a profile), joined to the session, bound to the
-    calling client process (or `--here`, or the client launched after `--`). No token is ever pasted."""
-    if a.insecure_http and a.url.startswith("https://"):
-        raise CliError(EXIT_USAGE, "usage", "--insecure-http is for http:// boards only.")
-    if not a.url.startswith("https://") and not is_loopback_http(a.url) and not a.insecure_http:
-        raise CliError(EXIT_USAGE, "insecure_url", "Use https:// (plain http only for loopback, or with --insecure-http).")
-    staging = os.path.join(profiles.ORIG_CONFIG, "glassboard")
-    os.makedirs(staging, mode=0o700, exist_ok=True)
-    ca_file = os.path.abspath(a.ca_file) if a.ca_file else (_fetch_ca(a, staging) if a.fetch_ca else None)
-    cfg = {"url": a.url, "ca_file": ca_file}
-    if a.insecure_http and not is_loopback_http(a.url):
-        cfg["insecure_http"] = True
-    _, raw = request(cfg, "POST", "/api/v1/join", body={"code": a.code})
+def redeem(cfg: dict, code: str, local: bool = False) -> dict:
+    """Redeem a join code with the board named by `cfg` (url, ca_file, insecure_http): store the agent's
+    profile (in ./.glassboard with `local`), activate it for this process and its children, and fetch the
+    session's recovery ID. Returns the join response; its token is written to the profile only (E1)."""
+    _, raw = request(cfg, "POST", "/api/v1/join", body={"code": code})
     j = json.loads(raw)
     name = profiles.name_for(j["handle"])
+    if local:
+        profiles.use_local(name, os.getcwd())
     profiles.activate(name)
     d, cfg_path, cred_path = _paths()
     os.makedirs(d, mode=0o700, exist_ok=True)
@@ -271,14 +264,42 @@ def cmd_join(a) -> int:
     s = _fetch_session(load_config(), j["token"], j["session"])
     clistate.SessionState(s["session"]).save(_session_record(s))
     print(f"joined {r2(j['session'])} as @{r2(j['handle'])} (profile {name})")
+    return {k: v for k, v in j.items() if k != "token"}
+
+
+def cmd_join(a) -> int:
+    """Redeem an invite code: this agent's own identity (a profile), joined to the session, bound to the
+    calling client process (or `--here`, or the client launched after `--`). No token is ever pasted."""
+    if a.insecure_http and a.url.startswith("https://"):
+        raise CliError(EXIT_USAGE, "usage", "--insecure-http is for http:// boards only.")
+    if getattr(a, "local", False) and not a.here:
+        raise CliError(EXIT_USAGE, "usage", "--local goes with --here (the profile lives in this directory).")
+    if not a.url.startswith("https://") and not is_loopback_http(a.url) and not a.insecure_http:
+        raise CliError(EXIT_USAGE, "insecure_url", "Use https:// (plain http only for loopback, or with --insecure-http).")
+    staging = os.path.join(os.getcwd(), profiles.LOCAL_DIR) if getattr(a, "local", False) \
+        else os.path.join(profiles.ORIG_CONFIG, "glassboard")
+    if a.fetch_ca:                                   # only a fetched CA needs the staging directory
+        os.makedirs(staging, mode=0o700, exist_ok=True)
+    ca_file = os.path.abspath(a.ca_file) if a.ca_file else (_fetch_ca(a, staging) if a.fetch_ca else None)
+    cfg = {"url": a.url, "ca_file": ca_file}
+    if a.insecure_http and not is_loopback_http(a.url):
+        cfg["insecure_http"] = True
+    j = redeem(cfg, a.code, local=getattr(a, "local", False))
+    name = profiles.name_for(j["handle"])
     cmd = a.command[1:] if a.command[:1] == ["--"] else a.command
     if cmd:                                                  # launch the client as this identity
+        if a.here:                                           # the folder keeps its identity after the client exits
+            print(f"identity file: {profiles.write_pointer(name, local=getattr(a, 'local', False))} (no secret inside)")
         print(f"starting {r2(cmd[0])} as @{r2(j['handle'])}…", file=sys.stderr)
         livesession.hold_for_client()                         # a wake supervisor sees this client as open (E31)
         runtime.run(_with_compaction(cmd, getattr(a, "compact_at", None)))
         return EXIT_OK
     if a.here:
-        print(f"identity file: {profiles.write_pointer(name)} (no secret inside); commands run below this directory use it")
+        if getattr(a, "local", False):
+            print(f"identity file: {profiles.write_pointer(name, local=True)}; config, credential and state live in "
+                  f"./{profiles.LOCAL_DIR} (git-ignored), so commands never write outside this directory")
+        else:
+            print(f"identity file: {profiles.write_pointer(name)} (no secret inside); commands run below this directory use it")
     else:
         bound = profiles.bind(name)
         if bound:
@@ -287,7 +308,7 @@ def cmd_join(a) -> int:
             print(f"identity file: {profiles.write_pointer(name)} (no agent client process found above this shell)")
     print(f"profile config: {profiles.profile_root(name)}")
     print("Keep that profile directory and its state subdirectory persistent. The workspace pointer alone cannot restore credentials.")
-    if os.path.exists("/.dockerenv"):
+    if os.path.exists("/.dockerenv") and not getattr(a, "local", False):   # --local: state is in the (mounted) workspace
         print("warning: this appears to be a container; mount persistent config and state storage before it exits.",
               file=sys.stderr)
     print("next: glassboard doctor && glassboard sync     (then read docs: glassboard protocol)")
@@ -766,11 +787,12 @@ def cmd_use(a) -> int:
 
 def _parse_draft(text: str) -> dict:
     parts = [x.strip() for x in text.split("|")]
-    if len(parts) not in (3, 4) or not all(parts[:3]):
-        raise CliError(EXIT_USAGE, "usage", '--draft "title|scope|deliverable[|assignee]"')
+    if len(parts) not in (3, 4, 5) or not all(parts[:3]):
+        raise CliError(EXIT_USAGE, "usage", '--draft "title|scope|deliverable[|assignee[|reviewer]]"')
     d = {"title": parts[0], "scope": parts[1], "deliverable": parts[2]}
-    if len(parts) == 4 and parts[3]:
-        d["assignee"] = parts[3].lstrip("@")
+    for i, field in ((3, "assignee"), (4, "reviewer")):        # B70: an empty field is left out
+        if len(parts) > i and parts[i].lstrip("@"):
+            d[field] = parts[i].lstrip("@")
     return d
 
 
@@ -861,7 +883,8 @@ def cmd_post(a) -> int:
             msg["preflight_seq"] = a.preflight_seq
         r = send_op(ctx, "POST", f"{ctx.path}/messages", msg, f"post {a.kind}")
     encoded = msg["body"].encode("utf-8")
-    print(f"posted #{r['seq']} [{r2(r['type'])}] in {r2(r['session'])} · body {len(msg['body'])} chars "
+    where = r2(r['session']) + (f" #{r2(msg['channel'])}" if msg.get("channel") else "")
+    print(f"posted #{r['seq']} [{r2(r['type'])}] in {where} · body {len(msg['body'])} chars "
           f"sha256 {hashlib.sha256(encoded).hexdigest()}")
     return EXIT_OK
 
@@ -1010,9 +1033,13 @@ def cmd_watch(a) -> int:
 
 
 def cmd_history(a) -> int:
+    """Without --after: the latest --limit events (before --before, if given). With --after: oldest
+    first from there. A partial window always ends with a line saying so and how to page (B72)."""
     ctx = open_session(a, allow_reconcile=True)
-    q = {"after": a.after, "limit": a.limit}
-    for k in ("before", "task", "thread", "actor", "type", "channel"):
+    q: dict = {"limit": a.limit}
+    if a.after is None:
+        q["latest"] = "true"
+    for k in ("after", "before", "task", "thread", "actor", "type", "channel"):
         if getattr(a, k) is not None:
             q[k] = getattr(a, k)
     if a.to_me:
@@ -1021,9 +1048,13 @@ def cmd_history(a) -> int:
         q["format"] = "text"
     path = f"{ctx.path}/events?{urllib.parse.urlencode(q)}"
     if a.json:
-        _print_json(_call(ctx.cfg, ctx.tok, "GET", path))
+        j = _call(ctx.cfg, ctx.tok, "GET", path)
+        _print_json(j)
+        if j.get("truncated"):                       # JSON stays pure on stdout; the notice goes to stderr
+            print(render.reword_partial(render.partial_line(j), "cli"), file=sys.stderr)
     else:
-        sys.stdout.write(r2(_call(ctx.cfg, ctx.tok, "GET", path, accept_text=True), allow_newline=True))
+        text = r2(_call(ctx.cfg, ctx.tok, "GET", path, accept_text=True), allow_newline=True)
+        sys.stdout.write(render.reword_partial(text, "cli"))
     return EXIT_OK
 
 
@@ -1124,6 +1155,19 @@ def _fence_for(ctx: Ctx, num: int) -> str:
     return fence
 
 
+def _revision_of(ctx: Ctx, num: int, tp: str, supersedes: int | None) -> int | None:
+    """ERRATA E48 (B71): `task submit` on a task in review revises its current submission. Without a live
+    fence for the task the CLI names the current submission itself; `--supersedes SEQ` names it exactly."""
+    if supersedes is None and ctx.state.runtime(ctx.label).get("fences", {}).get(str(num)):
+        return None                                      # the claim is held: an ordinary fenced submit
+    current = _call(ctx.cfg, ctx.tok, "GET", tp)
+    if current["status"] != "review":
+        if supersedes is not None:
+            raise CliError(EXIT_USAGE, "usage", f"T{num} is {r2(current['status'])}; --supersedes revises a task in review.")
+        return None                                      # _fence_for explains the missing fence
+    return supersedes if supersedes is not None else (current.get("submission") or {}).get("seq")
+
+
 def cmd_task(a) -> int:
     act = a.action
     if act == "next":
@@ -1173,6 +1217,8 @@ def cmd_task(a) -> int:
                                                         "(or --from-proposal SEQ --draft N|all)")
                 if a.assignee or d.get("assignee"):
                     body["assignee"] = a.assignee or d.get("assignee")
+                if d.get("reviewer"):                    # B70: the draft's reviewer; --reviewer overrides
+                    body["reviewer"] = d["reviewer"]
                 if a.stale_after is not None:
                     body["stale_after_s"] = a.stale_after
                 if a.check:
@@ -1186,6 +1232,7 @@ def cmd_task(a) -> int:
         num = _task_num(a.task)
         tp = f"{ctx.path}/tasks/{num}"
         text = a.text
+        revised = None
         if act == "edit":
             current = _call(ctx.cfg, ctx.tok, "GET", tp)
             body = {"if_version": current["version"]}
@@ -1231,10 +1278,10 @@ def cmd_task(a) -> int:
             body = {"fence": _fence_for(ctx, num), "item": item_num, "done": not a.undo}
             r = send_op(ctx, "POST", f"{tp}/check", body, f"task check T{num}", fenced=True, task=num)
         elif act in ("note", "block", "unblock", "submit", "release") and not (act == "release" and a.as_coordinator):
-            fence = _fence_for(ctx, num)
             if act in ("note", "block", "submit") and not text:
                 raise CliError(EXIT_USAGE, "usage", f'usage: glassboard task {act} T# "<text>"')
-            body = {"fence": fence}
+            supersedes = _revision_of(ctx, num, tp, a.supersedes) if act == "submit" else None
+            body = {"supersedes": supersedes} if supersedes else {"fence": _fence_for(ctx, num)}
             key = {"note": "note", "block": "reason", "unblock": "reason", "submit": "summary", "release": "handoff"}[act]
             if text:
                 body[key] = text
@@ -1253,8 +1300,9 @@ def cmd_task(a) -> int:
                 body["handoff_fields"] = handoff
             if act == "block" and a.waiting_on:
                 body["waiting_on"] = a.waiting_on
-            r = send_op(ctx, "POST", f"{tp}/{act}", body, f"task {act} T{num}", fenced=True, task=num,
-                        fence_effect="drop" if act in ("submit", "release") else None)
+            r = send_op(ctx, "POST", f"{tp}/{act}", body, f"task {act} T{num}", fenced=not supersedes, task=num,
+                        fence_effect="drop" if act in ("submit", "release") and not supersedes else None)
+            revised = supersedes
         elif act == "decline":                               # B41: give the task back with a reason
             if not text:
                 raise CliError(EXIT_USAGE, "usage", 'usage: glassboard task decline T# "<reason>"')
@@ -1287,6 +1335,7 @@ def cmd_task(a) -> int:
             raise CliError(EXIT_USAGE, "usage", f"unknown task action {act}")
     fence = r.get("fence")
     shown = f" · fence T{r['task']} g{r['gen']} kept for this runtime" if fence else ""
+    shown += f" · revision: supersedes #{revised}" if revised else ""
     print(f"T{r['task']} {r2(r['status'])} g{r['gen']} v{r['version']}" + (f" · #{r['seq']}" if r.get("seq") else "") + shown)
     return EXIT_OK
 
@@ -1877,6 +1926,11 @@ def cmd_topic_channel(a) -> int:
     return EXIT_OK
 
 
+def cmd_team(a) -> int:
+    from . import team
+    return team.main(a, sys.modules[__name__])
+
+
 def cmd_wake(a) -> int:
     from . import wakerun
     return wakerun.main(a, sys.modules[__name__])
@@ -1892,8 +1946,11 @@ def cmd_checkpoint(a) -> int:
             return EXIT_OK
         sys.stdout.write(textviews.checkpoint_text(r["checkpoint"]))
         return EXIT_OK
+    if a.text and not a.summary:
+        a.summary = a.text
     if not (a.summary and a.next):
-        raise CliError(EXIT_USAGE, "usage", 'usage: glassboard checkpoint save --summary "..." --next "..."')
+        raise CliError(EXIT_USAGE, "usage", 'usage: glassboard checkpoint save "SUMMARY" --next "NEXT STEP" '
+                                            '(or --summary "..." --next "...")')
     body = {"summary": a.summary, "next_action": a.next}
     if a.blockers:
         body["blockers"] = a.blockers
@@ -1943,6 +2000,9 @@ def build_parser() -> argparse.ArgumentParser:
     jn.add_argument("--fetch-ca", action="store_true"); jn.add_argument("--ca-fingerprint")
     jn.add_argument("--insecure-http", action="store_true")
     jn.add_argument("--here", action="store_true", help="identify by a pointer file in this directory instead")
+    jn.add_argument("--local", action="store_true",
+                    help="with --here: keep this identity's config, credential and state in ./.glassboard (for clients "
+                         "sandboxed to their workspace)")
     jn.add_argument("--compact-at", metavar="PERCENT|off", help="with -- CLIENT: its auto-compaction threshold")
     jn.add_argument("command", nargs="*", help="-- CLIENT…: start the agent client as this identity")
     sub.add_parser("protocol", help="print the agent protocol")
@@ -2007,7 +2067,7 @@ def build_parser() -> argparse.ArgumentParser:
         po.add_argument("--re", type=int); po.add_argument("--task"); po.add_argument("--channel", metavar="NAME", help="post in a topic channel"); po.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
         po.add_argument("--done", help="stand-up update: what got done"); po.add_argument("--doing", help="stand-up update: in progress")
         po.add_argument("--blocked", help="stand-up update: what blocks you")
-        po.add_argument("--draft", action="append", metavar="TITLE|SCOPE|DELIVERABLE[|ASSIGNEE]", help="proposal: a proposed task (repeat, at most 10)")
+        po.add_argument("--draft", action="append", metavar="TITLE|SCOPE|DELIVERABLE[|ASSIGNEE[|REVIEWER]]", help="proposal: a proposed task (repeat, at most 10)")
         if verb == "post":
             pf_options = po.add_mutually_exclusive_group()
             pf_options.add_argument("--check", action="store_true", help="record a preflight, then post only if ready")
@@ -2022,7 +2082,9 @@ def build_parser() -> argparse.ArgumentParser:
     wa.add_argument("--limit", type=int, default=50)
     wa.add_argument("--interval", type=float, default=1.0, metavar="SECONDS")
     wa.add_argument("--heartbeats", action="store_true", help="also print unchanged timeout packets")
-    hi = sess(sub.add_parser("history")); hi.add_argument("--after", type=int, default=0); hi.add_argument("--before", type=int)
+    hi = sess(sub.add_parser("history", help="read the log: the latest --limit events, or oldest first from --after"))
+    hi.add_argument("--after", type=int, help="oldest first after this event number (0 = from the start)")
+    hi.add_argument("--before", type=int, help="the latest --limit events before this event number")
     hi.add_argument("--task"); hi.add_argument("--thread", type=int); hi.add_argument("--actor"); hi.add_argument("--type")
     hi.add_argument("--channel", metavar="NAME")
     hi.add_argument("--to-me", action="store_true"); hi.add_argument("--limit", type=int, default=50); hi.add_argument("--json", action="store_true")
@@ -2032,6 +2094,7 @@ def build_parser() -> argparse.ArgumentParser:
     grp.add_argument("--resend", metavar="OP"); grp.add_argument("--drop", metavar="OP")
     sess(sub.add_parser("outbox"))
     cp = sess(sub.add_parser("checkpoint")); cp.add_argument("action", choices=["save", "show"])
+    cp.add_argument("text", nargs="?", help="save: the summary (same as --summary)")
     cp.add_argument("--summary"); cp.add_argument("--next"); cp.add_argument("--blockers")
     cp.add_argument("--task", action="append", metavar="T#"); cp.add_argument("--ref", action="append", metavar="LABEL|LOC|ACCESS[|SHA256]", help="reference; ACCESS is owner_only, shared, or unavailable")
     cp.add_argument("--body", help='longer handoff text, or "-" for stdin'); cp.add_argument("--principal")
@@ -2057,6 +2120,8 @@ def build_parser() -> argparse.ArgumentParser:
     tk2.add_argument("--reviewer", metavar="HANDLE", help="create/edit: the member who reviews submitted work ('none' clears)")
     tk2.add_argument("--notes", help="task review: what to change, or why it is good")
     tk2.add_argument("--submission", type=int, metavar="SEQ", help="task review: exact task.submitted event number")
+    tk2.add_argument("--supersedes", type=int, metavar="SEQ",
+                     help="task submit on a task in review: the submission this revision replaces (default: the current one)")
     tk2.add_argument("--commit", metavar="FULL_SHA", help="submit/review: exact 40- or 64-character Git commit")
     tk2.add_argument("--test", action="append", metavar="OUTCOME|COMMAND[|DETAIL]",
                      help="task submit: structured test evidence (repeatable)")
@@ -2153,6 +2218,26 @@ def build_parser() -> argparse.ArgumentParser:
     wk.add_argument("--recheck", type=float, default=10.0, metavar="SECONDS",
                     help="run: while a wake is held (session open or unknown), check again this often")
     wk.add_argument("command", nargs="*", help="run: -- extra client arguments (escalating flags are refused)")
+    tm = sub.add_parser("team", help="Session Managers: start scripts that start each agent already joined").add_subparsers(
+        dest="action", required=True)
+    for verb, text in (("up", "write one start script per agent into its folder (nothing changes on the board)"),
+                       ("start", "what a start script runs: fresh join code, join this folder, hooks, client, wake")):
+        tp = tm.add_parser(verb, help=text)
+        tp.add_argument("session_name", metavar="SESSION")
+        if verb == "up":
+            tp.add_argument("pairs", nargs="+", metavar="AGENT:FOLDER", help="an agent name under you and its folder")
+            tp.add_argument("--client", default="claude", metavar="claude|codex|grok|opencode|CMD",
+                            help="the client each script starts (default claude); a command line is allowed")
+            tp.add_argument("--force", action="store_true", help="replace existing start scripts")
+        else:
+            tp.add_argument("agent", help="the agent's name under you")
+            tp.add_argument("--compact-at", metavar="PERCENT|off", help="the client's auto-compaction threshold")
+            tp.add_argument("command", nargs="*", help="-- CLIENT…: the client to start as the agent")
+        tp.add_argument("--role", choices=["member", "coordinator", "observer"], default="member")
+        tp.add_argument("--local", action="store_true", help="keep the agent's config, credential and state in FOLDER/.glassboard")
+        tp.add_argument("--no-hooks", action="store_true", help="do not install the delivery hooks (Claude Code, Codex)")
+        tp.add_argument("--no-hold", action="store_true", help="delivery hooks without the Stop hook that keeps a turn going once")
+        tp.add_argument("--no-wake", action="store_true", help="do not offer the wake supervisor when the client exits")
     fl = sess(sub.add_parser("flow", help="cycle times, blocked time, review turnaround, throughput")); fl.add_argument("--json", action="store_true")
     at = sub.add_parser("attention", help="what needs you, across your sessions"); at.add_argument("--json", action="store_true")
     ov = sub.add_parser("overview", help="one line per session"); ov.add_argument("--json", action="store_true")
@@ -2168,6 +2253,8 @@ def _main(argv=None) -> int:
         a.body = extra[0]
     elif extra and a.cmd == "wake" and a.action == "run":
         a.command = [*a.command, *extra]               # client arguments after `--`; refused flags are checked in run
+    elif extra and a.cmd == "team" and a.action == "start" and extra[0] == "--":
+        a.command = [*a.command, *extra]               # the client command line after `--`, after the options
     elif extra:
         ap.error("unrecognized arguments: " + " ".join(extra))
     if (a.cmd == "task" and a.action not in ("list", "next") and not a.task
@@ -2179,7 +2266,7 @@ def _main(argv=None) -> int:
         ap.error(f"artifact {a.action} needs {'a file path' if a.action == 'upload' else 'an artifact ID'}")
     if getattr(a, "ack", None) not in (None, "stored") and not str(a.ack).isdigit():
         ap.error("--ack takes no value or a non-negative integer")
-    if a.cmd not in ("join", "skill"):
+    if a.cmd not in ("join", "skill", "team"):              # team: the human's own login (team.use_human)
         name, source = profiles.resolve(a.as_profile)
         a.resolved_profile, a.profile_source = name, source
         if name:
@@ -2215,7 +2302,7 @@ def _main(argv=None) -> int:
                 "attention": lambda a: _me_view("attention", a), "overview": lambda a: _me_view("overview", a),
                 "question": cmd_question, "reconcile": cmd_reconcile, "outbox": cmd_outbox, "task": cmd_task,
                 "checkpoint": cmd_checkpoint, "join": cmd_join, "protocol": cmd_protocol, "skill": cmd_skill,
-                "export": cmd_export, "invite": cmd_invite, "reference": cmd_reference}[a.cmd](a), a)
+                "export": cmd_export, "invite": cmd_invite, "reference": cmd_reference, "team": cmd_team}[a.cmd](a), a)
     except CliError as e:
         _print_error(e)
         return e.code
@@ -2224,7 +2311,7 @@ def _main(argv=None) -> int:
         return EXIT_USAGE
 
 
-NO_NEWS = ("hook", "claude-channel", "wake", "sync", "watch", "hooks", "run", "join")
+NO_NEWS = ("hook", "claude-channel", "wake", "sync", "watch", "hooks", "run", "join", "team")
 
 
 def _with_inbox_news(rc: int, a) -> int:
@@ -2243,8 +2330,10 @@ def main(argv=None) -> int:
         if e.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
             raise
         _print_error(CliError(EXIT_CONFIG, "state_unwritable", f"Cannot write {e.filename or 'local CLI state'}.",
-                              {"hint": "Make the CLI state and config directories writable (inside a sandbox, add them "
-                                       "to its writable roots), or point XDG_STATE_HOME / XDG_CONFIG_HOME elsewhere."}))
+                              {"hint": "Inside a sandbox that only lets you write in your workspace, ask your human for "
+                                       "a new join code and join from the workspace with `glassboard join URL CODE "
+                                       "--here --local`: everything then lives in ./.glassboard. Otherwise make the CLI "
+                                       "state and config directories writable."}))
         return EXIT_CONFIG
 
 

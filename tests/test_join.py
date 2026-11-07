@@ -11,6 +11,12 @@ import sys
 from test_board import b  # noqa: F401  (fixture)
 from test_tasks import api
 
+
+def _pythonpath() -> dict:
+    """A source-tree run (PYTHONPATH=src) tests that tree's CLI in subprocesses too."""
+    return {"PYTHONPATH": os.environ["PYTHONPATH"]} if os.environ.get("PYTHONPATH") else {}
+
+
 CODE = re.compile(r"^[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}$")
 
 
@@ -103,6 +109,8 @@ def test_bad_codes_count_against_the_auth_failure_limit(b):
 # --- the CLI: one identity per agent, chosen without environment juggling ------------------------------
 
 def _cli(env, *args, cwd=None):
+    if os.environ.get("PYTHONPATH") and "PYTHONPATH" not in env:     # a worktree's src/ reaches the CLI too
+        env = {**env, "PYTHONPATH": os.environ["PYTHONPATH"]}
     return subprocess.run([sys.executable, "-m", "glassboard.cli", *args], env=env, cwd=cwd,
                           capture_output=True, text=True, timeout=60)
 
@@ -159,8 +167,57 @@ def test_cli_join_here_writes_a_secret_free_pointer(b, live_server, tmp_path):
     assert _handle(_cli(env, "whoami", "--json", cwd=tmp_path).stdout) == "jose"
 
 
+def _read_only_tree(path):
+    for d, dirs, _ in os.walk(path):
+        os.chmod(d, 0o500)
+
+
+def _writable_tree(path):
+    for d, dirs, _ in os.walk(path):
+        os.chmod(d, 0o700)
+
+
+def test_cli_join_here_local_keeps_everything_in_the_workspace_for_sandboxed_clients(b, live_server, tmp_path):
+    """0.1.7: a client sandboxed to its workspace (it may write nowhere else) works with `join --here --local`."""
+    env = live_server.env("jose")
+    work = tmp_path / "work"
+    (work / "sub").mkdir(parents=True)
+    r = _cli(env, "join", live_server.url, invite(b).json()["code"], "--here", "--local", cwd=work)
+    assert r.returncode == 0, r.stderr
+    assert (work / ".glassboard-profile").read_text() == "jose-helper\nlocal\n"
+    assert (work / ".glassboard" / ".gitignore").read_text() == "*\n"          # the credential is never committed
+    assert oct((work / ".glassboard").stat().st_mode & 0o777) == "0o700"                 # private folder
+    cred = work / ".glassboard" / "profile" / "cfg" / "glassboard" / "credentials"
+    assert oct(cred.stat().st_mode & 0o777) == "0o600" and "gbt_" not in r.stdout
+    home = tmp_path / "home-jose"
+    before = sorted(str(p) for p in home.rglob("*"))
+    _read_only_tree(home)                                 # the sandbox: nothing outside the workspace is writable
+    try:
+        sync = _cli(env, "sync", cwd=work / "sub")
+        assert sync.returncode == 0, sync.stderr
+        assert _handle(_cli(env, "whoami", "--json", cwd=work).stdout) == "jose/helper"
+        post = _cli(env, "post", "note", "From the sandbox", cwd=work)
+        assert post.returncode == 0 and post.stdout.startswith("posted #"), post.stderr
+        cp = _cli(env, "checkpoint", "save", "Sandboxed and fine", "--next", "Keep going", cwd=work)
+        assert cp.returncode == 0, cp.stderr
+    finally:
+        _writable_tree(home)
+    assert sorted(str(p) for p in home.rglob("*")) == before                 # nothing was written outside
+    assert (work / ".glassboard" / "profile" / "state").is_dir()
+    assert _cli(env, "join", live_server.url, "AAAA-AAAA-AAAA", "--local", cwd=work).returncode == 2   # needs --here
+
+
+def test_post_to_a_channel_names_the_channel(b, live_server, tmp_path):
+    from test_topic_channels import channel
+    channel(b, "design", "jose", members=["jose/claude"])
+    env = live_server.env("jose")
+    r = _cli(env, "-s", "s1", "post", "note", "Hello", "--channel", "design")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("posted #") and " in s1 #design · body " in r.stdout
+
+
 def test_doctor_explains_a_dangling_workspace_pointer(tmp_path):
-    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path / "cfg"),
+    env = {"PATH": os.environ["PATH"], **_pythonpath(), "HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path / "cfg"),
            "XDG_STATE_HOME": str(tmp_path / "state")}
     work = tmp_path / "work"
     work.mkdir()
@@ -180,7 +237,7 @@ def test_cli_join_then_launch_runs_the_client_as_the_agent(b, live_server, tmp_p
 
 
 def test_cli_join_refuses_plain_http_to_a_remote_board(tmp_path):
-    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path / "c"),
+    env = {"PATH": os.environ["PATH"], **_pythonpath(), "HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path / "c"),
            "XDG_STATE_HOME": str(tmp_path / "s")}
     r = _cli(env, "join", "http://192.168.1.20:8080", "AAAA-AAAA-AAAA")
     assert r.returncode != 0 and "https" in r.stderr
@@ -290,7 +347,7 @@ def test_skill_is_packaged_identical_and_installs_for_both_clients(tmp_path):
     packaged = (root / "src/glassboard/skill/SKILL.md").read_text()
     assert packaged == (root / "integrations/claude-skill/glassboard/SKILL.md").read_text()
     assert "glassboard join" in packaged and "Task Manager" in packaged and "--wait 600" in packaged
-    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    env = {"PATH": os.environ["PATH"], **_pythonpath(), "HOME": str(tmp_path)}
     r = _cli(env, "skill", "install")
     assert r.returncode == 0, r.stderr
     for d in (".claude", ".codex"):

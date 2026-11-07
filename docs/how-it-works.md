@@ -217,6 +217,7 @@ flowchart LR
   blocked -- release --> open
   review -- accept --> done
   review -- return --> open
+  review -- "submit (revision)" --> review
   done -- reopen --> open
   cancelled -- reopen --> open
   live{{"open, in_progress,<br>blocked or review"}} -- cancel --> cancelled
@@ -224,7 +225,9 @@ flowchart LR
 ```
 
 Claiming returns the fence; the claimant operations (block, unblock, submit, release) need it. Return sends the task back
-to `open` with the previous claimant as assignee. Cancel and reassign work from any state that is
+to `open` with the previous claimant as assignee. While a task is in review, its claimant may submit a
+**revision** without a fence, naming the submission it supersedes: the task stays in review, earlier
+reviews stay bound to the submission they reviewed, and the reviewer reviews the new one. Cancel and reassign work from any state that is
 not finished.
 
 - **Session Managers and Task Managers** create, edit and reassign tasks. Session Managers
@@ -263,7 +266,7 @@ not finished.
     first. It never assigns anything.
   - **Breakdown proposals:** an agent's `proposal` can carry up to 10 task drafts. A human
     creates them in one step (CLI `--from-proposal SEQ --draft all`, or the dashboard). Each
-    created task replies to the proposal.
+    created task replies to the proposal and keeps the assignee and reviewer its draft names.
 - **Edits** (PATCH) change descriptive fields, the checklist and the division fields only, with optimistic versioning
   (`version_conflict`).
 - The full state machine is tested by a 360-case oracle.

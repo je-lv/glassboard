@@ -13,7 +13,7 @@
 {% if t.verification %}{% set v = t.verification %}{% set st = v.steps %}
 <section class="card verification" aria-labelledby="verif-h"><h2 id="verif-h">Verification {% if v.verified %}<span class="tag st st-done">verified</span>{% elif v.gaps %}<span class="tag st st-blocked">{{ v.gaps|length }} gap{{ "s" if v.gaps|length != 1 }}</span>{% endif %}</h2>
   <ol class="verif-steps">
-    <li class="{{ 'ok' if st.submitted else 'missing' }}"><strong>Submitted</strong> {% if st.submitted %}<a href="#e{{ st.submitted.seq }}">#{{ st.submitted.seq }}</a>{% if st.submitted.commit %} · <code>{{ st.submitted.commit[:12] }}</code>{% endif %} · tests {{ st.submitted.tests.pass }} pass, {{ st.submitted.tests.fail }} fail, {{ st.submitted.tests.skipped }} skipped{% else %}not recorded{% endif %}</li>
+    <li class="{{ 'ok' if st.submitted else 'missing' }}"><strong>Submitted</strong> {% if st.submitted %}<a href="#e{{ st.submitted.seq }}">#{{ st.submitted.seq }}</a>{% if st.submitted.supersedes %} · revises <a href="#e{{ st.submitted.supersedes }}">#{{ st.submitted.supersedes }}</a>{% endif %}{% if st.submitted.commit %} · <code>{{ st.submitted.commit[:12] }}</code>{% endif %} · tests {{ st.submitted.tests.pass }} pass, {{ st.submitted.tests.fail }} fail, {{ st.submitted.tests.skipped }} skipped{% else %}not recorded{% endif %}</li>
     <li class="{{ 'ok' if st.reviewed and st.reviewed.verdict == 'approve' else 'missing' }}"><strong>Reviewed</strong> {% if st.reviewed %}<a href="#e{{ st.reviewed.seq }}">#{{ st.reviewed.seq }}</a> by <span class="handle">@{{ st.reviewed.by }}</span> · {{ st.reviewed.verdict }}{% else %}not this submission{% endif %}</li>
     <li class="{{ 'ok' if st.accepted else 'missing' }}"><strong>Accepted</strong> {% if st.accepted %}<a href="#e{{ st.accepted.seq }}">#{{ st.accepted.seq }}</a> by <span class="handle">@{{ st.accepted.by }}</span>{% if st.accepted.by_kind != 'human' %} (agent){% endif %}{% else %}not yet{% endif %}</li>
   </ol>
@@ -23,6 +23,7 @@
 {% if t.submission %}
 <section class="card submission-evidence">
   <h2>Current submission <a href="#e{{ t.submission.seq }}">#{{ t.submission.seq }}</a></h2>
+  {% if t.submission.supersedes %}<p class="muted">A revision: it replaces submission <a href="#e{{ t.submission.supersedes }}">#{{ t.submission.supersedes }}</a>. Reviews of that submission stay with it; this one needs its own review.</p>{% endif %}
   {% if t.submission.commit %}<p>{{ hash(t.submission.commit, "commit-" ~ t.task, "Git commit") }}</p>{% endif %}
   {% if t.submission.tests %}<h3>Recorded tests</h3><ul>{% for test in t.submission.tests %}<li><span class="tag st st-{{ 'done' if test.outcome == 'pass' else ('cancelled' if test.outcome == 'fail' else 'open') }}">{{ test.outcome }}</span> <code>{{ test.command }}</code>{% if test.detail %} · {{ test.detail }}{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% if t.submission.incomplete_checklist_reason %}<p class="alert"><strong>Incomplete checklist override:</strong> {{ t.submission.incomplete_checklist_reason }}</p>{% endif %}
@@ -37,7 +38,7 @@
     {% for ln in head %}<div class="ln {{ ln.cls }}">{{ ln.text }}</div>{% endfor %}
     <details class="review-trail" open><summary>Review trail · {{ trail | length }} milestones</summary>
       <ol>{% for item in trail %}
-        <li><a href="#e{{ item.seq }}">#{{ item.seq }}</a> <strong>{{ item.type.replace("task.", "").replace("_", " ") }}</strong>
+        <li><a href="#e{{ item.seq }}">#{{ item.seq }}</a> <strong>{{ "revised" if item.supersedes else item.type.replace("task.", "").replace("_", " ") }}</strong>{% if item.supersedes %} (replaces <a href="#e{{ item.supersedes }}">#{{ item.supersedes }}</a>){% endif %}
           by <span class="handle">@{{ item.by }}</span> <time>{{ item.ts[:16].replace("T", " ") }}Z</time>
           {% if item.detail %}<p>{{ item.detail }}</p>{% endif %}
           {% if item.refs %}<ul>{% for ref in item.refs %}<li>{{ ref.label }} · {{ ref.loc }} · {{ ref.access }}</li>{% endfor %}</ul>{% endif %}

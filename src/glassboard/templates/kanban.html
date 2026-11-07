@@ -5,11 +5,11 @@
     {% if col.status == "done" and board.counts.done > col.tasks|length %}<p class="muted small-text">Showing latest {{ col.tasks|length }} of {{ board.counts.done }}.</p>{% endif %}
     {% if not col.tasks %}<p class="column-empty">{{ {"open": "No open tasks.", "in_progress": "Nothing in progress.", "blocked": "Nothing blocked.", "review": "Nothing waiting for review.", "done": "Nothing done yet."}.get(col.status, "Empty.") }}</p>{% endif %}
     {% for t in col.tasks %}
-    {% set stripe = {"danger": "danger", "warn": "attention"}.get(t.face.tone) %}<article class="kcard kcard-{{ t.status }}{{ ' stale' if t.stale else '' }}"{% if stripe %} data-tone="{{ stripe }}"{% endif %}>
-      <div class="khead">{% if allow_task_links %}<a class="ktask" href="/s/{{ sess.handle }}/t/{{ t.task }}" data-task-modal>T{{ t.task }}</a>{% else %}<strong class="ktask">T{{ t.task }}</strong>{% endif %}
+    {% set stripe = {"danger": "danger", "warn": "attention"}.get(t.face.tone) %}<article class="kcard kcard-{{ t.status }}{{ ' stale' if t.stale else '' }}"{% if allow_task_links %} data-card-link{% endif %}{% if stripe %} data-tone="{{ stripe }}"{% endif %}>
+      <div class="khead"><strong class="ktask">T{{ t.task }}</strong>
         <span class="tag st st-{{ {"progress": "in_progress", "review": "review", "warn": "blocked", "danger": "danger", "done": "done"}.get(t.face.tone, "open") }}">{{ t.face.state }}</span>
         {% if t.priority and t.priority != "normal" %}<span class="kprio prio-{{ t.priority }}">{{ t.priority }}</span>{% endif %}</div>
-      {% if allow_task_links %}<a class="ktitle ln inl" href="/s/{{ sess.handle }}/t/{{ t.task }}" data-task-modal>{{ t.title_line }}</a>{% else %}<div class="ktitle ln inl">{{ t.title_line }}</div>{% endif %}
+      {% if allow_task_links %}<a class="ktitle ln inl" href="/s/{{ sess.handle }}/t/{{ t.task }}" data-task-modal data-card-target>{{ t.title_line }}</a>{% else %}<div class="ktitle ln inl">{{ t.title_line }}</div>{% endif %}
       <div class="kwho">{% if t.face.badge %}<span class="actor-badge actor-{{ t.face.badge.style }}" title="@{{ t.face.badge.handle }}"><span class="actor-mark" aria-hidden="true">{{ t.face.badge.mark }}</span><span>{{ t.face.badge.name }}</span></span>{% elif t.assignee %}<span class="muted">for @{{ t.assignee }}</span>{% else %}<span class="muted">unassigned</span>{% endif %}
         {% if t.face.age %}<span class="kage">{{ t.face.age }}</span>{% endif %}</div>
       {% if t.assignment_stage in ("assigned", "acknowledged", "working") and t.ack_overdue %}<p class="muted small-text">Awaiting acknowledgment · {{ t.assignment_age_s|ago }} · {% if t.assignee_synced_since_assignment %}synced{% else %}no sync since assignment{% endif %}</p>{% endif %}

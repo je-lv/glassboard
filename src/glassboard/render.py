@@ -153,11 +153,42 @@ def section(text: str) -> str:
     return r2(text)
 
 
+def partial_line(w: dict) -> str:
+    """The board-authored Section line saying a history window is partial and how to page (B72, E47),
+    from the window fields of a history response. Only board integers go in it."""
+    hint = "; ".join(([f"earlier: `before={int(w['next_before'])}`"] if w["more_before"] else [])
+                     + ([f"later: `after={int(w['next_after'])}`"] if w["more_after"] else []))
+    return (f"next: partial: showing the {'latest' if w['window'] == 'latest' else 'first'} {int(w['shown'])} "
+            f"of {int(w['total'])} events (#{int(w['first'])}-#{int(w['last'])}); {hint}")
+
+
+# B72 / ERRATA E47: the Section line that ends a partial history window. Whole-line match only; the
+# board writes nothing but integers into it, so participant text can never be reworded.
+PARTIAL_RE = re.compile(r"^next: partial: showing the (?:latest|first) \d+ of \d+ events \(#\d+-#\d+\); "
+                        r"(?:earlier: `before=\d+`)?(?:; )?(?:later: `after=\d+`)?$")
+_PAGE_RE = re.compile(r"`(before|after)=(\d+)`")
+
+
+def reword_partial(text: str, style: str) -> str:
+    """Rewrite the paging hint of a partial-history line into CLI flags (`cli`) or MCP arguments (`mcp`)."""
+    out = []
+    for line in text.split("\n"):
+        if PARTIAL_RE.match(line):
+            if style == "cli":
+                line = _PAGE_RE.sub(lambda m: f"`glassboard history --{m[1]} {m[2]}`", line) + \
+                    " (repeat your other options; --limit up to 100)"
+            else:
+                line = _PAGE_RE.sub(lambda m: f"call board_history with {m[1]}={m[2]}", line) + \
+                    " (repeat your other arguments; limit up to 100)"
+        out.append(line)
+    return "\n".join(out)
+
+
 # --- events --------------------------------------------------------------------------------------
 
 # data keys rendered per event, in this order: (key, kind). Keys not listed are not rendered.
 _DATA_ORDER = [
-    ("title", "inline"), ("deliverable", "inline"), ("summary", "inline"), ("next_action", "inline"),
+    ("title", "inline"), ("deliverable", "inline"), ("supersedes", "seq"), ("summary", "inline"), ("next_action", "inline"),
     ("resolution", "inline"), ("handle", "inline"), ("role", "inline"), ("job_role", "inline"),
     ("role_version", "inline"), ("from", "inline"), ("to", "inline"),
     ("coordinator", "inline"), ("autonomous", "inline"), ("stale_after_s", "inline"),
@@ -192,6 +223,8 @@ def event_lines(ev: dict) -> list[str]:
             continue
         if kind == "inline":
             lines.append(inline_line("backup taken" if key == "backup_taken_at" else key, data[key]))
+        elif kind == "seq":                                     # E48: a revision names the submission it replaces
+            lines.append(inline_line(key, f"#{int(data[key])}"))
         elif kind == "items":                                   # one Inline line per list item
             lines.extend(inline_line("check", str(item)) for item in data[key])
         elif kind in ("standup", "handoff"):                    # structured fields, in a fixed order
@@ -201,6 +234,7 @@ def event_lines(ev: dict) -> list[str]:
         elif kind == "drafts":                                  # proposed tasks, one Inline line each
             for i, d in enumerate(data[key], 1):
                 who = f" · for @{d['assignee']}" if d.get("assignee") else ""
+                who += f" · review by @{d['reviewer']}" if d.get("reviewer") else ""     # B70
                 lines.append(inline_line("draft", f"{i}. {d['title']} · deliverable: {d['deliverable']}{who}"))
         else:
             lines.extend(block_lines(str(data[key])))

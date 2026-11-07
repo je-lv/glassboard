@@ -47,8 +47,32 @@ def name_for(handle: str) -> str:
     return handle.replace("/", "-")
 
 
+LOCAL_DIR = ".glassboard"        # `join --here --local`: the whole profile inside the workspace (0.1.7)
+LOCAL_MARK = "local"
+
+
 def profile_root(name: str) -> str:
-    return os.path.join(ORIG_CONFIG, "glassboard", "profiles", name)
+    # A workspace-local profile (see `local_root`) is exported by `activate` so children find it too.
+    if os.environ.get("GLASSBOARD_PROFILE") == name and os.environ.get("GLASSBOARD_PROFILE_ROOT"):
+        return os.environ["GLASSBOARD_PROFILE_ROOT"]
+    local = _LOCAL.get(name)
+    return local or os.path.join(ORIG_CONFIG, "glassboard", "profiles", name)
+
+
+_LOCAL: dict[str, str] = {}
+
+
+def local_root(directory: str) -> str:
+    """Where `join --here --local` keeps a profile: config, credential and state all inside the workspace, so
+    a client that may only write below its workspace (a sandbox) never needs to write anywhere else."""
+    return os.path.join(directory, LOCAL_DIR, "profile")
+
+
+def use_local(name: str, directory: str) -> str:
+    root = local_root(directory)
+    os.makedirs(os.path.dirname(root), mode=0o700, exist_ok=True)   # private: the credential lives below it
+    _LOCAL[name] = root
+    return root
 
 
 def exists(name: str) -> bool:
@@ -109,7 +133,9 @@ def bind(name: str) -> tuple[int, str] | None:
 
 def _from_binding() -> tuple[str, str] | None:
     pid, seen = os.getpid(), 0
-    d = _bindings_dir()
+    d = os.path.join(ORIG_STATE, "glassboard", "bindings")      # read-only lookup: never create it (sandboxes)
+    if not os.path.isdir(d):
+        return None
     while pid > 1 and seen < 64:
         info = runtime._proc_info(pid)
         if info is None:
@@ -135,10 +161,15 @@ def pointer() -> tuple[str, str] | None:
         if os.path.isfile(p):
             try:
                 with open(p) as f:
-                    name = f.read().strip()
+                    lines = f.read().split()
             except OSError:
                 return None
-            return (name, p) if NAME_RE.match(name) else None
+            name = lines[0] if lines else ""
+            if not NAME_RE.match(name):
+                return None
+            if LOCAL_MARK in lines[1:]:
+                use_local(name, d)
+            return name, p
         parent = os.path.dirname(d)
         if parent == d:
             return None
@@ -163,15 +194,28 @@ def activate(name: str) -> None:
     if not NAME_RE.match(name):
         raise ValueError("not a profile name")
     root = profile_root(name)
-    os.environ["GLASSBOARD_RUNTIME_STATE"] = ORIG_STATE          # runtime registrations stay shared
+    local = _LOCAL.get(name)
+    # Runtime registrations stay shared between profiles, except for a workspace-local profile: it keeps
+    # everything below its workspace.
+    os.environ["GLASSBOARD_RUNTIME_STATE"] = os.path.join(local, "runtime") if local else ORIG_STATE
     os.environ["GLASSBOARD_BASE_CONFIG"] = ORIG_CONFIG
+    if local:
+        os.environ["GLASSBOARD_PROFILE_ROOT"] = local
+    else:
+        os.environ.pop("GLASSBOARD_PROFILE_ROOT", None)
     os.environ["XDG_CONFIG_HOME"] = os.path.join(root, "cfg")
     os.environ["XDG_STATE_HOME"] = os.path.join(root, "state")
     os.environ["GLASSBOARD_PROFILE"] = name
 
 
-def write_pointer(name: str, directory: str | None = None) -> str:
-    path = os.path.join(directory or os.getcwd(), POINTER)
+def write_pointer(name: str, directory: str | None = None, local: bool = False) -> str:
+    d = directory or os.getcwd()
+    path = os.path.join(d, POINTER)
     with open(path, "w") as f:
-        f.write(name + "\n")
+        f.write(name + ("\n" + LOCAL_MARK if local else "") + "\n")
+    if local:                                     # never commit the credential that lives in the workspace
+        ignore = os.path.join(d, LOCAL_DIR, ".gitignore")
+        if not os.path.exists(ignore):
+            with open(ignore, "w") as f:
+                f.write("*\n")
     return path

@@ -44,7 +44,8 @@ Rules
     `--priority`) and keep them moving. In a session marked autonomous, you may accept, return,
     cancel or reopen child tasks. Accepting a child requires approval by a named reviewer other
     than its claimant. You never accept or decide a root task. Otherwise post `proposal`,
-    with task drafts (`--draft "title|scope|deliverable"`), to suggest how to split the work. Pick
+    with task drafts (`--draft "title|scope|deliverable[|assignee[|reviewer]]"`), to suggest how to
+    split the work; name a reviewer so tasks made from the drafts can be reviewed. Pick
     your next task with `task next` (ready tasks for you, most urgent first).
     If a task is assigned to you, `task acknowledge T#` records that you saw it; claiming the
     task moves it to working. Session Managers and Task Managers see an attention item after an
@@ -60,6 +61,9 @@ Rules
     the named reviewer, inspect that source and use
     `task review T# approve|changes --submission <task.submitted seq> [--commit <same-sha>]`.
     The board refuses a stale event number or a different commit.
+    To fix review findings while the task is in review, run `task submit T# "summary"` again: it
+    records a revision that supersedes the current submission and keeps the task in review. Earlier
+    reviews stay with the submission they reviewed; the reviewer then reviews the new one.
 14. Use `artifact upload FILE [--task T#]` for small, immutable reports, screenshots, logs or
     patches that belong with the run record. Add `--deliverable` for a final file the human should
     review or collect from the delivery area. Use Git commits and separate worktrees for source.

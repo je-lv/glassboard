@@ -86,6 +86,8 @@ def task_head(v: dict) -> str:
                           + (f" · parent T{v['parent']}" if v.get("parent") else "")
                           + (f" · reviewer {v['reviewer']}" if v.get("reviewer") else "")
                           + (f" · submission #{v['submission']['seq']}" if v.get("submission") else "")
+                          + (f" (revises #{v['submission']['supersedes']})"
+                             if v.get("submission") and v["submission"].get("supersedes") else "")
                           + (f" · review: {v['review']['verdict']}" if v.get("review") else "")
                           + (" · needs " + ", ".join(f"T{d['task']}" for d in v["depends_on"] if d["status"] != "done")
                              if v.get("depends_on") and not v.get("ready", True) else "")

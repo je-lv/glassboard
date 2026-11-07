@@ -5,20 +5,31 @@
 <section class="head"><h1>Replay <span class="task-num">T{{ t.task }}</span> <span class="task-title">{{ title_line }}</span></h1>
   <p class="muted">Every recorded event of this task, in order: who acted and whom it reached. Replies to the task's messages are included.</p></section>
 {% if not r.steps %}<p class="empty">Nothing recorded for this task yet.</p>{% else %}
-<section class="card replay" data-replay aria-labelledby="rp-h">
+<section class="card replay" data-replay data-rp-total="{{ r.steps|length }}" aria-labelledby="rp-h">
+  <div class="rp-stage" data-rp-stage>
   <div class="rp-bar"><h2 id="rp-h">{{ r.steps|length }} step{{ "s" if r.steps|length != 1 }}</h2>
     <div class="rp-controls" data-rp-controls hidden>
-      <button type="button" class="small secondary" data-rp="back" aria-label="Previous step">Back</button>
-      <button type="button" class="small primary" data-rp="play">Play</button>
-      <button type="button" class="small secondary" data-rp="step" aria-label="Next step">Step</button>
-      <button type="button" class="small secondary" data-rp="reset">Reset</button>
+      <div class="rp-buttons" role="group" aria-label="Replay controls">
+        <button type="button" class="small secondary" data-rp="back" aria-label="Previous step" title="Previous step (Left)">Back</button>
+        <button type="button" class="small primary" data-rp="play" aria-label="Play" title="Play or pause (Space)">Play</button>
+        <button type="button" class="small secondary" data-rp="step" aria-label="Next step" title="Next step (Right)">Step</button>
+        <button type="button" class="small secondary" data-rp="reset" aria-label="Back to the first step">Reset</button>
+      </div>
+      <div class="rp-speed" role="group" aria-label="Speed" data-rp-speed>
+        <button type="button" class="small secondary" data-rp-ms="1600" data-rp-speed-name="slow" aria-pressed="false">Slow</button>
+        <button type="button" class="small secondary" data-rp-ms="900" data-rp-speed-name="normal" aria-pressed="true">Normal</button>
+        <button type="button" class="small secondary" data-rp-ms="450" data-rp-speed-name="fast" aria-pressed="false">Fast</button>
+      </div>
       <span class="rp-pos" data-rp-pos aria-live="polite"></span>
     </div></div>
-  <div class="rp-scroll">
-  <svg class="rp-svg" width="{{ r.width }}" height="{{ r.height }}" viewBox="0 0 {{ r.width }} {{ r.height }}" role="img" aria-label="Sequence of the task's recorded events between members; the numbered list below has the same steps as text">
+  <div class="rp-scroll" data-rp-diagram tabindex="0" aria-label="Sequence diagram, scrolls on its own">
+  <svg class="rp-svg rp-svg-head" width="{{ r.width }}" height="40" viewBox="0 0 {{ r.width }} 40" aria-hidden="true">
+    <rect class="rp-head-bg" x="0" y="0" width="{{ r.width }}" height="40"/>
+    {% for l in r.lanes %}<text class="rp-lane-name" x="{{ l.x }}" y="24" text-anchor="middle">@{{ l.handle }}</text>{% endfor %}
+  </svg>
+  <svg class="rp-svg" width="{{ r.width }}" height="{{ r.height - 36 }}" viewBox="0 36 {{ r.width }} {{ r.height - 36 }}" role="img" aria-label="Sequence of the task's recorded events between members; the numbered list below has the same steps as text">
     <defs><marker id="rp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path class="rp-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
-    {% for l in r.lanes %}<text class="rp-lane-name" x="{{ l.x }}" y="24" text-anchor="middle">@{{ l.handle }}</text>
-    <line class="rp-lane" x1="{{ l.x }}" y1="36" x2="{{ l.x }}" y2="{{ r.height - 8 }}"/>{% endfor %}
+    {% for l in r.lanes %}<line class="rp-lane" x1="{{ l.x }}" y1="36" x2="{{ l.x }}" y2="{{ r.height - 8 }}"/>{% endfor %}
     {% for s in r.steps %}<g class="rp-step rp-{{ s.cat }}" data-step="{{ s.n }}">
       {% if s.broadcast %}<line class="rp-msg rp-all" x1="{{ r.lanes[0].x }}" y1="{{ s.y }}" x2="{{ r.lanes[-1].x }}" y2="{{ s.y }}"/>
       {% elif s.self %}<circle class="rp-dot" cx="{{ s.x0 }}" cy="{{ s.y }}" r="6"/>
@@ -28,7 +39,10 @@
     </g>{% endfor %}
   </svg>
   </div>
-  <ol class="rp-list">{% for s in r.steps %}
+  <p class="rp-now" data-rp-now hidden></p>
+  <p class="rp-keys muted small-text" data-rp-keys hidden>Space plays or pauses, Left and Right step, Esc stops. Scrolling a box stops it following until you press Play.</p>
+  </div>
+  <ol class="rp-list" data-rp-list tabindex="0" aria-label="Steps as text">{% for s in r.steps %}
     <li class="rp-item rp-{{ s.cat }}" data-step="{{ s.n }}" id="rp-{{ s.n }}"><span class="rp-when">{{ s.ts[11:19] }}</span>
       <a href="/s/{{ sess.handle }}?f=all#e{{ s.seq }}">#{{ s.seq }}</a> <span class="handle">@{{ s.actor }}</span> <span class="ev-kind">{{ s.type }}</span>
       {% if s.broadcast %}<span class="muted">to everyone</span>{% elif s.to %}<span class="muted">to {% for h in s.to %}@{{ h }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}

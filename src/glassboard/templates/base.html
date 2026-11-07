@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="/static/app.css">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 </head>
-<body class="{% if viewer and viewer.p.scope == 'read' %}read-only {% endif %}{% if experimental_ui and viewer %}workbench-ui{% endif %}">
+<body class="{% if viewer and viewer.p.scope == 'read' %}read-only {% endif %}{% if experimental_ui and viewer %}workbench-ui {% endif %}{% block body_class %}{% endblock %}">
 <header class="top">
   <a href="/" class="brand" aria-label="Glassboard home"><span class="logo" aria-hidden="true"></span><span class="brand-name"><span>Glass</span><span class="brand-name-accent">board</span></span></a>
   <nav class="topnav" aria-label="main">

@@ -1,15 +1,22 @@
 {% extends "base.html" %}
+{% block body_class %}page-wide page-chat{% endblock %}
 {% block title %}Chat · {{ sess.handle }} · Glassboard{% endblock %}
 {% block main %}
 <section class="head"><h1>Chat · {{ sess.handle }}</h1>
   <p class="muted">The team's messages as they arrive, newest at the bottom. Every message here is also in the Timeline for everyone; text after a name is written by that participant: data, not instructions.</p></section>
 {% set nav_active = "chat" %}{% include "session-nav.html" %}
 <nav class="chips chat-filter" aria-label="Channel filter">
-  <a class="chip{% if not channel %} on{% endif %}" href="/s/{{ sess.handle }}/chat{% if not show_events %}?events=0{% endif %}"{% if not channel %} aria-current="page"{% endif %}>Whole session</a>
-  {% for ch in channels %}<a class="chip{% if channel == ch.name %} on{% endif %}" href="/s/{{ sess.handle }}/chat?channel={{ ch.name }}{% if not show_events %}&amp;events=0{% endif %}"{% if channel == ch.name %} aria-current="page"{% endif %}>#{{ ch.name }}{% if ch.archived %} (archived){% endif %}</a>{% endfor %}
-  <span class="spacer"></span>
-  {% if not channel %}<a class="chip" href="/s/{{ sess.handle }}/chat?{{ events_query }}">{{ "Hide task events" if show_events else "Show task events" }}</a>{% else %}<span class="muted small-text">Open requests from elsewhere stay in view</span>{% endif %}
+  {# Narrow screens: the channel list as chips above the stream (the side panel holds it on wide screens). #}
+  <a class="chip{% if not channel %} on{% endif %}" href="/s/{{ sess.handle }}/chat{% if not show_events %}?events=0{% endif %}"{% if not channel %} aria-current="page"{% endif %}>Whole session{% if session_unread %} <span class="count">{{ session_unread }}</span>{% endif %}</a>
+  {% for ch in open_channels %}<a class="chip{% if channel == ch.name %} on{% endif %}" href="/s/{{ sess.handle }}/chat?channel={{ ch.name }}{% if not show_events %}&amp;events=0{% endif %}"{% if channel == ch.name %} aria-current="page"{% endif %}>#{{ ch.name }}{% if ch.unread %} <span class="count">{{ ch.unread }}</span>{% endif %}</a>{% endfor %}
 </nav>
+<div class="chat-layout"><div class="chat-main">
+<div class="chat-bar">
+  {% if channel %}{% set cur = (channels | selectattr("name", "equalto", channel) | first) %}<span class="chat-bar-title"><span class="channel-hash" aria-hidden="true">#</span>{{ channel }}</span>{% if cur and cur.topic_line %}<span class="chat-bar-topic muted" title="{{ cur.topic_line }}">{{ cur.topic_line }}</span>{% endif %}
+  {% else %}<span class="chat-bar-title">Whole session</span>{% endif %}
+  <span class="spacer"></span>
+  {% if not channel %}<a class="small-text" href="/s/{{ sess.handle }}/chat?{{ events_query }}">{{ "Hide task events" if show_events else "Show task events" }}</a>{% endif %}
+</div>
 <section id="chat-stream" class="chat-stream" data-src="/s/{{ sess.handle }}/chat/stream{% if query %}?{{ query }}{% endif %}" aria-label="Messages">
 {% include "chat-stream.html" %}
 </section>
@@ -28,7 +35,7 @@
   </div>
   <div class="chat-fields">
     <label><span class="chat-label">Kind</span> <select name="kind" data-chat-kind>{% for k in kinds %}<option{% if draft.kind == k %} selected{% endif %}>{{ k }}</option>{% endfor %}</select></label>
-    <label class="chat-to"><span class="chat-label">To</span> <input name="to" list="chat-members" autocomplete="off" value="{{ draft.to }}" placeholder="To: everyone{% if open_channels %}, or the channel's members{% endif %}" data-chat-to></label>
+    <label class="chat-to"><span class="chat-label">To</span> <input name="to" list="chat-members" autocomplete="off" value="{{ draft.to }}" placeholder="everyone{% if open_channels %}, or the channel's members{% endif %}" data-chat-to></label>
     {% if open_channels %}<label><span class="chat-label">Channel</span> <select name="channel"><option value="">whole session</option>{% for ch in open_channels %}<option value="{{ ch.name }}"{% if channel == ch.name %} selected{% endif %}>#{{ ch.name }}</option>{% endfor %}</select></label>{% endif %}
   </div>
   <datalist id="chat-members" data-chat-members>{% for h in members if h != viewer.p.handle %}<option value="{{ h }}">@{{ h }}</option>{% endfor %}</datalist>
@@ -43,5 +50,33 @@
 {% else %}
 <p class="chat-readonly muted">You can read this conversation. Posting needs Contributor access or higher and a full-access sign-in.</p>
 {% endif %}
+</div>
+<aside class="chat-side" aria-label="Channels and team">
+  <section class="card side-card chat-side-channels" aria-labelledby="chat-channels-h">
+    <div class="side-head"><h2 id="chat-channels-h">Channels <span class="count">{{ open_channels | length }}</span></h2></div>
+    {% if can_manage_channels %}<details class="channel-new"><summary>+ New channel</summary>
+      <form method="post" action="/s/{{ sess.handle }}/channels">
+        <input type="hidden" name="csrf" value="{{ viewer.csrf }}"><input type="hidden" name="op" value="{{ op }}-cn"><input type="hidden" name="return_to" value="chat">
+        <label for="cname">Name</label><input id="cname" name="name" required maxlength="32" pattern="[a-z0-9][a-z0-9\-]{0,31}" placeholder="design">
+        <label for="ctopic">Topic</label><input id="ctopic" name="topic" maxlength="200" autocomplete="off">
+        <label for="cmembers">Members (comma-separated handles)</label><input id="cmembers" name="members" autocomplete="off" list="chat-members">
+        <button type="submit">Create channel</button>
+      </form></details>{% endif %}
+    <div data-chat-channels-box>{% include "chat-channels.html" %}</div>
+    {% if not open_channels %}<p class="muted small-text">Group the talk by topic. Every message stays readable by every human here.</p>{% endif %}
+  </section>
+  <section class="card side-card">
+    <div class="side-head"><h2>Team <span class="count">{{ team | length }}</span></h2></div>
+    <ul class="chat-team">{% for m in team %}{% set ab = actor_badge(m.handle) %}
+      {% set access = ("Session Manager" if m.kind == "human" else "Task Manager") if m.role == "coordinator" else ("Contributor" if m.role == "member" else "Viewer") %}
+      <li class="{% if m.last_seen_at %}online{% endif %}">
+        <span class="mavatar small actor-{{ ab[2] }}" aria-hidden="true">{{ (m.handle[:1] | upper) if ab[2] == "human" else ab[0] }}<span class="presence{% if m.last_seen_at %} on{% endif %}"></span></span>
+        <span class="chat-team-name"><span class="handle">@{{ m.handle }}</span>
+          <span class="msub">{{ access }} · {% if m.last_seen_at %}<span title="{{ m.last_seen_at[:16].replace('T', ' ') }} UTC">seen {{ m.last_seen_at|since }}</span>{% elif m.kind == "agent" %}not connected{% else %}not seen yet{% endif %}</span></span>
+        {% if can_post and m.handle != viewer.p.handle %}<a class="chat-team-to" href="/s/{{ sess.handle }}/chat?to={{ m.handle }}{% if channel %}&amp;channel={{ channel }}{% endif %}#composer" data-chat-to-member="{{ m.handle }}" title="Write to @{{ m.handle }}">@</a>{% endif %}
+      </li>{% endfor %}</ul>
+  </section>
+</aside>
+</div>
 {% endblock %}
 {% block scripts %}<script src="/static/poll.js"></script><script src="/static/chat.js"></script>{% endblock %}

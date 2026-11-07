@@ -51,17 +51,35 @@ def stream(c, sess, viewer, me, channel: str | None = None, show_events: bool = 
     more = len(rows) > LIMIT
     rows = list(reversed(rows[:LIMIT]))
     low = rows[0]["seq"] if rows and more else 0
-    # Owed requests stay visible: older than this page, or in another channel than the filter.
+    # Owed requests stay visible. The whole-session view pins the ones older than this page. A channel view
+    # shows only that channel's messages (B67): its own older owed requests are pinned, and open requests from
+    # elsewhere fold into one line that names the ones the viewer owes.
     shown = {r["seq"] for r in rows}
     cand_where, cand_args = f"session_id=? AND type IN ({_marks(len(OWED_TYPES))})", [sid, *OWED_TYPES]
     if not channel:
         cand_where += " AND seq < ?"; cand_args.append(low)
-    extra = []
+    extra, elsewhere_rows = [], []
     for r in c.execute(f"SELECT * FROM event WHERE {cand_where} ORDER BY seq DESC LIMIT {OLD_OWED_LIMIT}", cand_args):
-        if r["seq"] not in shown and inbox.obligation_holders(c, sid, r["seq"]):
+        if r["seq"] in shown:
+            continue
+        holders = inbox.obligation_holders(c, sid, r["seq"])
+        if not holders:
+            continue
+        if channel and r["channel"] != channel:
+            elsewhere_rows.append((r, holders))
+        else:
             extra.append(r)
     rows = sorted(rows + extra, key=lambda r: r["seq"])
     pinned = {r["seq"] for r in extra}
+    elsewhere = None
+    if elsewhere_rows:
+        mine = []
+        for r, holders in sorted(elsewhere_rows, key=lambda x: x[0]["seq"]):
+            if viewer.p.id in holders:
+                v = inbox.views(c, [r])[0]
+                mine.append({"seq": v["seq"], "actor": v["actor"], "type": v["type"], "channel": v["channel"],
+                             "text": _first_line(v["body"])})
+        elsewhere = {"count": len(elsewhere_rows), "mine": mine}
 
     views = inbox.views(c, rows)
     actor_ids = {r["actor_id"] for r in rows}
@@ -111,7 +129,7 @@ def stream(c, sess, viewer, me, channel: str | None = None, show_events: bool = 
     items = [{"kind": "message", **m} for m in messages]
     if show_events and not channel and messages:
         items = _with_markers(c, sid, items, low)
-    return {"items": items, "more": more, "count": len(messages)}
+    return {"items": items, "more": more, "count": len(messages), "elsewhere": elsewhere}
 
 
 def _with_markers(c, sid: str, items: list[dict], low: int) -> list[dict]:

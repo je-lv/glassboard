@@ -113,9 +113,8 @@ def test_interrupted_capture_stops_client_and_preserves_partial_record(tmp_path:
                "--native-unavailable-reason", "synthetic client has no native history",
                "--", sys.executable, "-c", client]
     recorder = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    for _ in range(200):
-        if client_pid.exists():
-            break
+    deadline = time.monotonic() + 10           # a loaded machine can take seconds to start two Pythons
+    while not client_pid.exists() and time.monotonic() < deadline:
         time.sleep(0.01)
     assert client_pid.exists()
     os.kill(recorder.pid, interrupt_signal)

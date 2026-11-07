@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}page-wide{% endblock %}
 {% block title %}Conversations · {{ sess.handle }} · Glassboard{% endblock %}
 {% block main %}
 <section class="head"><h1>Conversations · {{ sess.handle }}</h1><p class="muted">Readable messages and reply threads from the shared, append-only session record.</p></section>

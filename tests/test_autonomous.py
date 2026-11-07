@@ -99,6 +99,26 @@ def test_agent_cannot_accept_self_reviewed_child(gb):
     assert refused.status_code == 409 and refused.json()["error"]["code"] == "peer_review_required"
 
 
+def test_e48_agent_acceptance_needs_a_review_of_the_latest_revision(gb):
+    """An approval of an earlier submission never carries over to the author's revision (ERRATA E48)."""
+    gb.req("POST", "/api/v1/sessions", "jose", json={"handle": "auto", "title": "Build", "autonomous": True})
+    gb.add("auto", "jose/claude", role="coordinator")
+    gb.add("auto", "ana/codex")
+    root = gb.req("POST", "/api/v1/sessions/auto/tasks", "jose",
+                  json={"title": "Root", "scope": "r", "deliverable": "r"}, rec=gb.rec("auto")).json()["task"]
+    child = _task(gb, "Child", parent=f"T{root}", assignee="ana/codex", reviewer="jose/claude")
+    first = _submit(gb, child, "ana/codex")
+    assert _api(gb, "POST", f"/tasks/{child}/review", "jose/claude",
+                {"verdict": "approve", "submission_seq": first}).status_code == 200
+    revised = _api(gb, "POST", f"/tasks/{child}/submit", "ana/codex", {"supersedes": first, "summary": "Finished, v2"})
+    assert revised.status_code == 200 and revised.json()["status"] == "review", revised.text
+    refused = _api(gb, "POST", f"/tasks/{child}/accept", "jose/claude")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "peer_review_required"
+    assert _api(gb, "POST", f"/tasks/{child}/review", "jose/claude",
+                {"verdict": "approve", "submission_seq": revised.json()["seq"]}).status_code == 200
+    assert _api(gb, "POST", f"/tasks/{child}/accept", "jose/claude").status_code == 200
+
+
 def test_agent_can_return_and_reopen_only_child_tasks_in_autonomous_session(gb):
     gb.req("POST", "/api/v1/sessions", "jose", json={"handle": "auto", "title": "Build", "autonomous": True})
     gb.add("auto", "jose/claude", role="coordinator")

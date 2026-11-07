@@ -136,6 +136,7 @@ MCP_WORDING: list[tuple[re.Pattern, str]] = [
 
 
 def mcp_wording(text: str) -> str:
+    text = render.reword_partial(text, "mcp")              # B72: partial history pages in MCP terms
     out = []
     for line in text.split("\n"):
         for pat, repl in MCP_WORDING:
@@ -245,7 +246,7 @@ def build_server(app=None, host: str = "localhost"):
         "Post a message. kind: question|answer|update|proposal|blocker|note (decisions are human-only). "
         "An update may carry `standup` {done?, doing?, blocked?}. kind=approval asks the humans named in `to` for "
         "permission; only they can grant it, and a grant covers exactly what you asked. "
-        "A proposal may carry `drafts`: proposed tasks [{title, scope, deliverable, assignee?}] a human can create "
+        "A proposal may carry `drafts`: proposed tasks [{title, scope, deliverable, assignee?, reviewer?}] a human can create "
         "in one step. channel: post in a topic channel you belong to (it reaches the channel's members by their "
         "follow/mentions/mute choice; `to` then names channel members). op: your idempotency key (8-64 of A-Z a-z 0-9 _ -); "
         "reuse it only to retry the same post."))
@@ -262,12 +263,16 @@ def build_server(app=None, host: str = "localhost"):
         return await respond(r, f"post {kind}", session, recovery)
 
     @server.tool(name="board_history", description=(
-        "Read the session log as canonical text (filters: task, thread, after, to_me, type e.g. 'decision')."))
-    async def board_history(session: str, task: str | None = None, thread: int | None = None, after: int = 0,
-                            limit: int = 50, to_me: bool = False, type: str | None = None, channel: str | None = None):
+        "Read the session log as canonical text (filters: task, thread, to_me, type e.g. 'decision', channel). "
+        "Without `after`: the latest `limit` events (before `before`, if given); with `after`: oldest first from "
+        "there (0 = the start). A partial result ends with a `next: partial` line saying how to page."))
+    async def board_history(session: str, task: str | None = None, thread: int | None = None, after: int | None = None,
+                            before: int | None = None, limit: int = 50, to_me: bool = False, type: str | None = None,
+                            channel: str | None = None):
         r = await api.call("GET", f"/api/v1/sessions/{_seg(session)}/events",
-                           params={"task": task, "thread": thread, "after": after, "limit": limit,
-                                   "to": "me" if to_me else None, "type": type, "channel": channel, "format": "text"})
+                           params={"task": task, "thread": thread, "after": after, "before": before, "limit": limit,
+                                   "latest": "true" if after is None else None, "to": "me" if to_me else None,
+                                   "type": type, "channel": channel, "format": "text"})
         return await respond(r, "history")
 
     @server.tool(name="board_digest", description=(
@@ -298,11 +303,13 @@ def build_server(app=None, host: str = "localhost"):
     @server.tool(name="board_task", description=(
         "Act on a task as its claimant: claim (the result holds the fence once), note, check (tick checklist `item`; "
         "done=false unticks), block (text = reason; waiting_on = '#<question seq>', 'T<n>' or '@<handle>'), unblock, "
-        "submit (text = summary; optional full commit and tests), release (text = handoff), reclaim (text = reason; new fence); submit/release take "
+        "submit (text = summary; optional full commit and tests; on a task in review, pass supersedes = its current "
+        "submission seq instead of a fence to submit a revision that replaces it), release (text = handoff), reclaim (text = reason; new fence); submit/release take "
         "handoff {done?, next?, gotchas?}; note takes effort_min. review (verdict approve|changes, text = notes) names "
         "the exact submission_seq and repeats its commit when present; it is "
         "for the named reviewer. decline (text = reason) gives the task back: with your fence when you claimed it, "
-        "without one when it is only assigned to you. Every action except claim/reclaim/review/decline needs your "
+        "without one when it is only assigned to you. Every action except claim/reclaim/review/decline (and a "
+        "revision) needs your "
         "fence. Creating, assigning "
         "and resolving task outcomes are not available through this MCP tool."))
     async def board_task(session: str, recovery: str, op: str, task: str, action: Literal[TASK_ACTIONS],
@@ -310,7 +317,7 @@ def build_server(app=None, host: str = "localhost"):
                          item: int | None = None, done: bool = True, waiting_on: str | None = None,
                          verdict: Literal["approve", "changes"] | None = None, handoff: dict | None = None,
                          effort_min: int | None = None, submission_seq: int | None = None,
-                         commit: str | None = None, tests: list[dict] | None = None):
+                         commit: str | None = None, tests: list[dict] | None = None, supersedes: int | None = None):
         base = f"/api/v1/sessions/{_seg(session)}/tasks/{_seg(task)}"
         if action == "claim":
             body: dict = {}
@@ -322,11 +329,15 @@ def build_server(app=None, host: str = "localhost"):
         elif action == "decline":
             body = {"reason": text, **({"fence": fence} if fence else {})}
         else:
-            if fence is None:                     # without a fence, release would be the coordinator's op
+            if fence is None and not (action == "submit" and supersedes is not None):
+                # without a fence, release would be the coordinator's op
                 return _error("invalid_request", "This action needs your fence.",
-                              hint="Pass the fence from your claim; if it is lost, use action=reclaim.",
+                              hint="Pass the fence from your claim; if it is lost, use action=reclaim."
+                                   + (" To revise a submission in review, pass supersedes instead." if action == "submit" else ""),
                               details={"fields": [{"loc": ["arguments", "fence"], "type": "missing"}]})
-            body = {"fence": fence}
+            body = {"fence": fence} if fence is not None else {"supersedes": supersedes}   # E48: a revision
+            if action == "submit" and fence is not None and supersedes is not None:
+                body["supersedes"] = supersedes                  # both: the API refuses it, never guessed here
             if action == "check":
                 body.update(item=item, done=done)
             else:

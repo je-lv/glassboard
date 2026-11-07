@@ -6,6 +6,8 @@ State machine, as tables below:
   in_progress|blocked --check--> unchanged (ticks a checklist item; counts as activity)
   in_progress --block--> blocked --unblock--> in_progress
   in_progress|blocked --submit--> review (gen+1, fence dies)
+  review --submit (no fence; the claimant names `supersedes` = current submission)--> review (version+1;
+         ERRATA E48: a revision; earlier reviews stay bound to the submission they reviewed)
   in_progress|blocked --release--> open (gen+1)             (claimant + fence, or a human coordinator)
   in_progress|blocked --reclaim--> unchanged (gen+1, new fence; same principal, or coordinator on its behalf)
   review --accept--> done            review --return--> open, assignee := previous claimant 
@@ -233,7 +235,8 @@ def verification_view(c, sid: str, task, rv: dict) -> dict | None:
     else:
         tests = sub["tests"]
         counts = {k: sum(1 for t in tests if t["outcome"] == k) for k in ("pass", "fail", "skipped")}
-        steps["submitted"] = {"seq": sub["seq"], "commit": sub["commit"], "tests": counts}
+        steps["submitted"] = {"seq": sub["seq"], "commit": sub["commit"], "tests": counts,
+                              **({"supersedes": sub["supersedes"]} if sub.get("supersedes") else {})}
         if not sub["commit"]:
             gaps.append("no commit recorded")
         if not tests:
@@ -273,6 +276,7 @@ def verification_lines(v: dict | None) -> list[str]:
     if s["submitted"]:
         t = s["submitted"]["tests"]
         parts.append(f"submitted #{s['submitted']['seq']}"
+                     + (f" (revises #{s['submitted']['supersedes']})" if s["submitted"].get("supersedes") else "")
                      + (f" at {s['submitted']['commit'][:12]}" if s["submitted"]["commit"] else "")
                      + f" (tests {t['pass']} pass, {t['fail']} fail, {t['skipped']} skipped)")
     if s["reviewed"]:
@@ -290,7 +294,8 @@ def latest_submission(c, sid: str, num: int) -> dict | None:
         return None
     data = json.loads(row["data"] or "{}")
     return {"seq": row["seq"], "commit": data.get("commit"), "tests": data.get("tests", []),
-            "refs": data.get("refs", []), "summary": data.get("summary")}
+            "refs": data.get("refs", []), "summary": data.get("summary"),
+            "supersedes": data.get("supersedes")}                  # E48: the submission this revision replaces
 
 
 TRAIL_TYPES = ("task.created", "task.acknowledged", "task.claimed", "task.reassigned", "task.edited",
@@ -309,7 +314,9 @@ def task_trail(c, sid: str, num: int) -> list[dict]:
         detail = (data.get("summary") or data.get("feedback") or data.get("reason") or
                   data.get("note") or ev.get("body") or data.get("title") or "")
         result.append({"seq": ev["seq"], "ts": ev["ts"], "by": ev["actor"], "type": ev["type"],
-                       "detail": detail, "refs": data.get("refs") or []})
+                       "detail": detail, "refs": data.get("refs") or [],
+                       **({"supersedes": data["supersedes"]} if ev["type"] == "task.submitted"
+                          and data.get("supersedes") else {})})
     return result
 
 
@@ -594,7 +601,9 @@ def show_task_trail(s: str, t: str, request: Request, format: Literal["json", "t
     if format == "text" or request.headers.get("accept", "").split(",")[0].strip().startswith("text/plain"):
         lines = [render.section(f"--- review trail · T{task['num']} · {len(trail)} events ---")]
         for item in trail:
-            lines.append(render.section(f"--- #{item['seq']} · {item['type']} · {item['by']} ---"))
+            lines.append(render.section(f"--- #{item['seq']} · {item['type']} · {item['by']}"
+                                        + (f" · supersedes #{item['supersedes']}" if item.get("supersedes") else "")
+                                        + " ---"))
             if item["detail"]:
                 lines.append(render.inline_line("detail", item["detail"]))
             for ref in item["refs"]:
@@ -844,7 +853,10 @@ class UnblockIn(StrictModel):
 
 
 class SubmitIn(StrictModel):
-    fence: str = Field(max_length=32)
+    # The live fence while the claim is held, or (ERRATA E48, B71) `supersedes`: the current submission's
+    # seq, when the author revises a submission that is in review. Exactly one of the two.
+    fence: str | None = Field(default=None, max_length=32)
+    supersedes: StrictInt | None = Field(default=None, ge=1)
     summary: str = Field(min_length=1, max_length=1024)
     refs: list[Ref] = Field(default_factory=list, max_length=MAX_REFS)
     handoff_fields: HandoffFields | None = None
@@ -888,13 +900,36 @@ def _fenced(op: str, s: str, t: str, body, key, recovery, runtime, p, database) 
         if replay is not None:
             return replay
         coordinator_release = op == "release" and body.fence is None
+        revision = op == "submit" and body.fence is None              # ERRATA E48 (B71)
+        previous = None
+        if op == "submit" and (body.fence is None) == (body.supersedes is None):
+            raise ApiError(422, "invalid_request", "The request failed validation.",
+                           hint="Send your fence while you hold the claim, or `supersedes` (the current "
+                                "submission's seq) to revise a submission that is in review.",
+                           details={"fields": [{"loc": ["body", "fence" if body.fence is None else "supersedes"],
+                                                "type": "missing" if body.fence is None else "not_allowed"}]})
         if coordinator_release:
             _human_coordinator(tx)
+        elif revision:
+            if task["claimant_id"] != p.id:          # the author: the claimant whose submission is in review
+                raise ApiError(403, "forbidden", "Only the author of the current submission may revise it.")
         else:
             _check_fence(c, task, p, body.fence)
         _state(tx, "task.progress" if op in ("note", "check", "block", "unblock") else "task.finish")
+        if revision:
+            froms = ("review",)
         if task["status"] not in froms:
+            if revision:
+                raise ApiError(409, "invalid_transition", f"Cannot revise a task that is {task['status']}.",
+                               hint="Only a submission in review can be revised; while you hold the claim, "
+                                    "submit with your fence.")
             raise ApiError(409, "invalid_transition", f"Cannot {op} a task that is {task['status']}.")
+        if revision:
+            previous = latest_submission(c, sid, task["num"])
+            if previous is None or body.supersedes != previous["seq"]:
+                raise ApiError(409, "submission_mismatch", "The revision does not name the current submission.",
+                               hint="Reload the task and name its latest task.submitted event in `supersedes`.",
+                               details={"current_submission_seq": previous["seq"] if previous else None})
         if op == "submit" and (not any(ch.isalnum() for ch in body.summary)
                                or body.summary.strip().casefold() in {"n/a", "none", "tbd", "todo"}):
             raise ApiError(422, "summary_required", "Describe what was delivered and where to find the evidence.")
@@ -915,7 +950,7 @@ def _fenced(op: str, s: str, t: str, body, key, recovery, runtime, p, database) 
             waited = _waiting_on(c, sid, body.waiting_on)
         new_status = to or task["status"]
         gen = task["gen"] + (1 if bump else 0)
-        version = task["version"] + (1 if new_status != task["status"] or bump else 0)
+        version = task["version"] + (1 if new_status != task["status"] or bump or revision else 0)
         cols: dict = {"status": new_status, "gen": gen, "version": version}
         if refresh:
             cols["last_activity_at"] = db.utcnow()
@@ -947,6 +982,8 @@ def _fenced(op: str, s: str, t: str, body, key, recovery, runtime, p, database) 
             data["title"] = item["text"]
         elif op == "submit":
             data["summary"] = body.summary
+            if revision:
+                data["supersedes"] = previous["seq"]
             if body.refs:
                 data["refs"] = [r.model_dump(exclude_none=True) for r in body.refs]
             if body.commit:

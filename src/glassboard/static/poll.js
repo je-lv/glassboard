@@ -47,7 +47,10 @@
     var live = document.querySelector("[data-live]");
     if (!live) { return; }
     live.hidden = false;
-    live.textContent = "live · " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    // Short on the tab bar so it never wraps it; the time of the last contact is in the tooltip.
+    var at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    live.textContent = "live";
+    live.title = "Last heard from the board at " + at;
   }
 
   function announce(message) {

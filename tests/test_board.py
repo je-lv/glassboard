@@ -275,7 +275,12 @@ def test_dashboard_board_page_and_attention_home(b):
     r = c.get("/s/s1/board")
     assert r.status_code == 200 and "content-security-policy" in r.headers
     html = r.text
-    assert f'<a class="ktask" href="/s/s1/t/{n}" data-task-modal>T{n}</a>' in html and '<progress value="1" max="2">' in html
+    assert f'<strong class="ktask">T{n}</strong>' in html and '<progress value="1" max="2">' in html
+    # B65: the whole card opens the task; the title is the card's one link and focus stop (works without JS)
+    assert 'data-card-link' in html and f'href="/s/s1/t/{n}" data-task-modal data-card-target>' in html
+    card = html[html.index('<article class="kcard'):]
+    card = card[:card.index('</article>')]
+    assert card.count('<a ') == 1
     assert "waiting on @jose" in html and "\u202e" not in html and "⟨U+202E⟩" in html
     assert "<script>x" not in html and "&lt;script&gt;" in html
     assert 'style="' not in html                                         # the CSP forbids inline styles

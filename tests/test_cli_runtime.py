@@ -4,6 +4,12 @@ import stat
 import subprocess
 import sys
 
+
+def _pythonpath() -> dict:
+    """A source-tree run (PYTHONPATH=src) tests that tree's CLI in subprocesses too."""
+    return {"PYTHONPATH": os.environ["PYTHONPATH"]} if os.environ.get("PYTHONPATH") else {}
+
+
 PY = sys.executable
 
 
@@ -12,7 +18,7 @@ def run(args, env, **kw):
 
 
 def base_env(tmp_path):
-    return {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state"),
+    return {"PATH": os.environ["PATH"], **_pythonpath(), "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state"),
             "XDG_CONFIG_HOME": str(tmp_path / "cfg")}
 
 

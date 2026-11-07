@@ -104,7 +104,7 @@ STATES = ("open", "in_progress", "blocked", "review", "done", "cancelled")
 ACTORS = ("claimant", "coord", "member", "agentcoord")
 WHO = {"claimant": "jose/claude", "coord": "jose", "member": "ana", "agentcoord": "ana/codex"}
 OPS = ("claim", "note", "block", "unblock", "submit", "release", "release_coord", "reclaim", "accept", "return",
-       "reassign", "cancel", "reopen", "patch")
+       "reassign", "cancel", "reopen", "patch", "revise")
 
 
 def expected(state, op, actor):
@@ -127,6 +127,12 @@ def expected(state, op, actor):
         allowed = {"note": ("in_progress",), "block": ("in_progress",), "unblock": ("blocked",),
                    "submit": ("in_progress", "blocked"), "release": ("in_progress", "blocked")}[op]
         return 200 if state in allowed else (409, "invalid_transition")
+    if op == "revise":
+        # ERRATA E48: submit without a fence, naming the current submission; the author (claimant) only,
+        # and only while the task is in review
+        if not is_claimant:
+            return 403
+        return 200 if state == "review" else (409, "invalid_transition")
     if op == "release_coord":
         if not human_coord:
             return 403
@@ -177,8 +183,10 @@ def run_op(gb, n, fence, op, actor):
                        "feedback": "fix x"},
             "reassign": {"if_version": current["version"], "to": "ana"},
             "cancel": {"if_version": current["version"]}, "reopen": {"if_version": current["version"]},
-            "patch": {"if_version": current["version"], "title": "renamed"}}[op]
-    path = {"patch": f"/tasks/{n}", "release_coord": f"/tasks/{n}/release"}.get(op, f"/tasks/{n}/{op}")
+            "patch": {"if_version": current["version"], "title": "renamed"},
+            "revise": {"supersedes": submission["seq"] if submission else 1, "summary": "second revision"}}[op]
+    path = {"patch": f"/tasks/{n}", "release_coord": f"/tasks/{n}/release",
+            "revise": f"/tasks/{n}/submit"}.get(op, f"/tasks/{n}/{op}")
     return api(gb, "PATCH" if op == "patch" else "POST", path, who, body)
 
 

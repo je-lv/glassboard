@@ -1321,7 +1321,11 @@ def mount(app: FastAPI) -> None:
             raise
         return _standdown_back(s, who)
 
-    def _channel_back(s: str, err: str | None = None) -> RedirectResponse:
+    def _channel_back(s: str, err: str | None = None, to_chat: bool = False, channel: str | None = None) -> RedirectResponse:
+        if to_chat:                                   # 0.1.7: from the Chat side panel (back to the same channel)
+            q = urllib.parse.urlencode({k: v for k, v in (("channel", channel), ("err", err)) if v})
+            return _security_headers(RedirectResponse(f"/s/{urllib.parse.quote(s)}/chat" + (f"?{q}" if q else ""),
+                                                      status_code=303))
         return _security_headers(RedirectResponse(f"/s/{urllib.parse.quote(s)}" + (f"?err={err}" if err else "") + "#channels",
                                                   status_code=303))
 
@@ -1332,6 +1336,7 @@ def mount(app: FastAPI) -> None:
         from . import api_channels
         form = await form_data(request)
         check_post(request, form, viewer)
+        to_chat = form.get("return_to") == "chat"
         key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
         with database.read() as c:
             sess, _ = sessions.require_member(c, s, viewer.p)
@@ -1340,12 +1345,12 @@ def mount(app: FastAPI) -> None:
                                           members=[h.strip().lstrip("@") for h in form.get("members", "").split(",") if h.strip()])
             api_channels.create_channel(s, body, key, sess["recovery_id"], None, viewer.p, database)
         except ValidationError:
-            return _channel_back(s, "invalid_request")
+            return _channel_back(s, "invalid_request", to_chat)
         except ApiError as e:
             if e.code in ("forbidden", "channel_exists", "recipient_not_member", "session_archived", "invalid_request"):
-                return _channel_back(s, e.code)
+                return _channel_back(s, e.code, to_chat)
             raise
-        return _channel_back(s)
+        return _channel_back(s, None, to_chat)
 
     @app.post("/s/{s}/channels/{name}/mode", include_in_schema=False)
     async def channel_mode_form(s: str, name: str, request: Request, viewer: Viewer = Depends(current_viewer),
@@ -1356,16 +1361,19 @@ def mount(app: FastAPI) -> None:
         key = form.get("op") if 8 <= len(form.get("op", "")) <= 64 else ids.new_ulid()
         with database.read() as c:
             sess, _ = sessions.require_member(c, s, viewer.p)
+        to_chat = form.get("return_to") == "chat"           # B67: the mode buttons in the Chat channel list
+        back_channel = form.get("return_channel", "")
+        back_channel = back_channel if api_channels.NAME_RE.match(back_channel) else None
         try:
             api_channels.set_mode(s, name, api_channels.ModeIn(mode=form.get("mode", "")), key, sess["recovery_id"], None,
                                   viewer.p, database)
         except ValidationError:
-            return _channel_back(s, "invalid_request")
+            return _channel_back(s, "invalid_request", to_chat, back_channel)
         except ApiError as e:
             if e.code in ("not_a_channel_member", "not_found", "session_archived"):
-                return _channel_back(s, e.code)
+                return _channel_back(s, e.code, to_chat, back_channel)
             raise
-        return _channel_back(s)
+        return _channel_back(s, None, to_chat, back_channel)
 
     @app.get("/attention-count", include_in_schema=False)
     def attention_count(viewer: Viewer = Depends(current_viewer), database: db.Database = Depends(get_db)):
@@ -1587,6 +1595,8 @@ def mount(app: FastAPI) -> None:
                     detail = data.get("title") or ""
                 elif ev["type"] == "task.submitted":
                     detail = data.get("summary") or ""
+                    if data.get("supersedes"):                          # E48: a revision of a submission in review
+                        detail = f"Revises #{int(data['supersedes'])}: {detail}"
                 elif ev["type"] == "task.reviewed":
                     detail = f"{data.get('verdict', '')}: {ev['body'] or ''}".strip(": ")
                 elif ev["type"] in ("task.returned", "task.blocked", "task.unblocked", "task.accepted", "task.cancelled"):
@@ -1847,13 +1857,25 @@ def mount(app: FastAPI) -> None:
             if channel is not None and channel not in {ch["name"] for ch in channels}:
                 channel = None
             chat = chatview.stream(c, sess, viewer, me, channel, show_events)
-            members = [r[0] for r in c.execute(
-                "SELECT p.handle FROM member m JOIN principal p ON p.id=m.principal_id "
-                "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.handle", (sess["id"],))]
+            # B67: unread per channel from the viewer's own read position (their inbox cursor); own posts never count.
+            mt = chatview.MESSAGE_TYPES
+            counts = {r[0]: r[1] for r in c.execute(
+                f"SELECT channel, COUNT(*) FROM event WHERE session_id=? AND seq>? AND actor_id!=? "
+                f"AND type IN ({','.join('?' * len(mt))}) GROUP BY channel",
+                (sess["id"], me["cursor_seq"], viewer.p.id, *mt))}
+            for ch in channels:
+                ch["unread"] = counts.get(ch["name"], 0)
+                ch["topic_line"] = render.inline(ch["topic"], 120) if ch["topic"] else None
+            session_unread = sum(counts.values())
+            team = [dict(r) for r in c.execute(
+                "SELECT p.handle, p.kind, m.role, m.last_seen_at FROM member m JOIN principal p ON p.id=m.principal_id "
+                "WHERE m.session_id=? AND m.left_at IS NULL ORDER BY p.kind DESC, p.handle", (sess["id"],))]
+            members = sorted(t["handle"] for t in team)
             ask = num("ask")
             target = chatview.reply_target(c, sess, ask if ask is not None else num("reply"))
         query = {k: v for k, v in (("channel", channel), ("events", None if show_events else "0")) if v}
-        draft = {"kind": "note", "to": "", "re": None}
+        to_param = request.query_params.get("to", "").lstrip("@")
+        draft = {"kind": "note", "to": to_param if to_param in members and to_param != viewer.p.handle else "", "re": None}
         if target:
             to = target["actor"] if target["actor"] != viewer.p.handle else ""
             kind = "question" if ask is not None else ("answer" if target["type"] == "question" else "note")
@@ -1862,7 +1884,9 @@ def mount(app: FastAPI) -> None:
         kinds = ["note", "question", "answer", "update", "proposal", "blocker"] + (["decision"] if human_coordinator else [])
         return {"viewer": viewer, "sess": sess, "me": me, "chat": chat, "channel": channel, "show_events": show_events,
                 "channels": channels, "open_channels": [ch for ch in channels if not ch["archived"]],
-                "members": members, "draft": draft, "kinds": kinds,
+                "archived_channels": [ch for ch in channels if ch["archived"]], "session_unread": session_unread,
+                "members": members, "team": team, "draft": draft, "kinds": kinds,
+                "can_manage_channels": me["role"] == "coordinator" or (viewer.p.kind == "human" and me["role"] == "member"),
                 "query": urllib.parse.urlencode(query),
                 "events_query": urllib.parse.urlencode({**query, "events": "0"} if show_events
                                                        else {k: v for k, v in query.items() if k != "events"}),
@@ -2477,7 +2501,8 @@ def mount(app: FastAPI) -> None:
                     src = ev["seq"]
                     import json as _json
                     drafts = [{"n": i, "line": render.inline(
-                                  f"{d['title']} · deliverable: {d['deliverable']}" + (f" · for @{d['assignee']}" if d.get("assignee") else ""), 300)}
+                                  f"{d['title']} · deliverable: {d['deliverable']}" + (f" · for @{d['assignee']}" if d.get("assignee") else "")
+                                  + (f" · review by @{d['reviewer']}" if d.get("reviewer") else ""), 300)}
                               for i, d in enumerate((_json.loads(ev["data"]) if ev["data"] else {}).get("drafts", []), 1)]
                     body = render.r2(ev["body"] or "", allow_newline=True)     # never raw controls in the page
                     prefill = {"title": body.strip().split("\n", 1)[0][:200], "scope": body}
@@ -2538,7 +2563,8 @@ def mount(app: FastAPI) -> None:
             return _form_error(s, "invalid_request", "/new-task")
         try:
             for i, d in enumerate(drafts, 1):
-                body = api_tasks.TaskCreate(**{k: d[k] for k in ("title", "scope", "deliverable", "assignee") if d.get(k)},
+                body = api_tasks.TaskCreate(**{k: d[k] for k in ("title", "scope", "deliverable", "assignee", "reviewer")
+                                               if d.get(k)},
                                             from_proposal=src)
                 api_tasks.create(database, viewer.p, s, body, f"{op}-d{i}", form.get("recovery"), None)
         except ApiError as e:

@@ -92,6 +92,34 @@ def test_proposal_drafts_render_and_become_tasks(b):
     assert not any(i["kind"] == "proposal" for i in b.req("GET", "/api/v1/me/attention", "jose", key=None).json()["items"])
 
 
+def test_b70_a_draft_names_a_reviewer_and_the_task_keeps_it(b):
+    drafts = [{"title": "Install section", "scope": "docs/install.md", "deliverable": "a page",
+               "assignee": "jose/claude", "reviewer": "ana/codex"},
+              {"title": "Recovery section", "scope": "docs/recovery.md", "deliverable": "a page", "reviewer": "ana"}]
+    seq = api(b, "POST", "/messages", "jose/claude", {"kind": "proposal", "body": "Split", "drafts": drafts}).json()["seq"]
+    assert b.events()[-1]["data"]["drafts"][1] == drafts[1]
+    text = b.req("GET", "/api/v1/sessions/s1/events?format=text", "jose", key=None).text
+    assert_canonical(text)
+    assert "  · draft: «1. Install section · deliverable: a page · for @jose/claude · review by @ana/codex»" in text
+    assert "  · draft: «2. Recovery section · deliverable: a page · review by @ana»" in text
+    n = mkx(b, "Install section", from_proposal=seq, assignee="jose/claude", reviewer="ana/codex")
+    assert view(b, n)["reviewer"] == "ana/codex"
+    # a reviewer (or assignee) who is not a member is refused at proposal time, without echoing the handle
+    for field in ("reviewer", "assignee"):
+        bad = [{"title": "X", "scope": "s", "deliverable": "d", field: "zed/nobody"}]
+        r = api(b, "POST", "/messages", "jose/claude", {"kind": "proposal", "body": "Split", "drafts": bad})
+        assert r.status_code == 422 and "zed" not in r.text
+        assert r.json()["error"]["details"]["fields"][0]["loc"] == ["body", "drafts", 0, field]
+
+
+def test_b70_receipts_of_drafts_without_a_reviewer_keep_their_digest(b):
+    """A draft without a reviewer hashes as before B70 (no `reviewer` key), so earlier receipts replay."""
+    from glassboard.api_messages import Draft
+    d = Draft(title="t", scope="s", deliverable="d")
+    assert d.digest_dump() == {"title": "t", "scope": "s", "deliverable": "d", "assignee": None}
+    assert Draft(title="t", scope="s", deliverable="d", reviewer="ana").digest_dump()["reviewer"] == "ana"
+
+
 def test_message_digest_without_drafts_is_unchanged(b):
     """Receipts stored before drafts existed must still replay: a message without drafts hashes exactly
     as the earlier payload shape (no `drafts` key at all)."""
@@ -148,6 +176,38 @@ def test_cli_division_flow(b, live_server):
     assert r.returncode == 5 and "task_waiting" in r.stderr
 
 
+def test_b70_cli_drafts_name_a_reviewer_and_b71_cli_revises_in_review(b, live_server):
+    for who in ("jose", "jose/claude", "ana/codex"):
+        assert live_server.cli(who, "use", "s1").returncode == 0
+    r = live_server.cli("jose/claude", "post", "proposal", "Split the FAQ",
+                        "--draft", "Install|docs/install.md|a page|jose/claude|ana/codex",
+                        "--draft", "Recovery|docs/recovery.md|a page||@ana/codex")
+    assert r.returncode == 0, r.stderr
+    seq = int(r.stdout.split("#")[1].split()[0])
+    assert [d.get("reviewer") for d in b.events()[-1]["data"]["drafts"]] == ["ana/codex", "ana/codex"]
+    assert "assignee" not in b.events()[-1]["data"]["drafts"][1]                   # an empty field is left out
+    assert live_server.cli("jose/claude", "post", "proposal", "x", "--draft", "a|b|c|d|e|f").returncode != 0
+    r = live_server.cli("jose", "task", "create", "--from-proposal", str(seq), "--draft", "all")
+    assert r.returncode == 0 and r.stdout.count("created") == 2, r.stderr
+    assert [view(b, n)["reviewer"] for n in (1, 2)] == ["ana/codex", "ana/codex"]
+    # B71: the author fixes review findings while T1 stays in review
+    assert live_server.cli("jose/claude", "task", "claim", "T1").returncode == 0
+    assert live_server.cli("jose/claude", "task", "submit", "T1", "Install section written").returncode == 0
+    first = view(b, 1)["submission"]["seq"]
+    assert live_server.cli("ana/codex", "task", "review", "T1", "changes", "--submission", str(first),
+                           "--notes", "Cover Windows too.").returncode == 0
+    r = live_server.cli("jose/claude", "task", "submit", "T1", "Install section, now with Windows")
+    assert r.returncode == 0, r.stderr
+    second = view(b, 1)["submission"]["seq"]
+    assert r.stdout.startswith("T1 review g") and f"#{second}" in r.stdout and f"revision: supersedes #{first}" in r.stdout
+    r = live_server.cli("jose/claude", "task", "submit", "T1", "Third try", "--supersedes", str(first))
+    assert r.returncode != 0 and "submission_mismatch" in r.stderr
+    r = live_server.cli("jose/claude", "task", "submit", "T2", "Not claimed", "--supersedes", str(first))
+    assert r.returncode != 0
+    assert live_server.cli("ana/codex", "task", "review", "T1", "approve", "--submission", str(second)).returncode == 0
+    assert view(b, 1)["review"]["submission_seq"] == second
+
+
 # --- dashboard ------------------------------------------------------------------------------------------
 
 def test_dashboard_creates_all_drafted_tasks(b):
@@ -168,3 +228,20 @@ def test_dashboard_creates_all_drafted_tasks(b):
     assert titles == ["A \u202e part", "B part"]
     r = c.post("/s/s1/tasks-from-drafts", data={**form, "from_proposal": "1"})
     assert r.status_code == 303 and "err=" in r.headers["location"]
+
+
+def test_b70_dashboard_create_all_shows_and_keeps_the_reviewer(b):
+    import re as _re
+    from test_dashboard import login
+    drafts = [{"title": "A part", "scope": "s", "deliverable": "d", "reviewer": "ana/codex"},
+              {"title": "B part", "scope": "s", "deliverable": "d"}]
+    seq = api(b, "POST", "/messages", "jose/claude", {"kind": "proposal", "body": "Split", "drafts": drafts}).json()["seq"]
+    c = login(b, "jose")
+    page = c.get(f"/s/s1/new-task?from={seq}").text
+    assert "A part · deliverable: d · review by @ana/codex" in page
+    form = {"csrf": _re.search(r'name="csrf" value="([^"]+)"', page).group(1),
+            "op": _re.search(r'name="op" value="([^"]+)"', page).group(1), "recovery": b.rec(), "from_proposal": str(seq)}
+    assert c.post("/s/s1/tasks-from-drafts", data=form).status_code == 303
+    tasks = b.req("GET", "/api/v1/sessions/s1/tasks", "jose", key=None).json()["tasks"]
+    assert [(t["title"], t["reviewer"]) for t in tasks] == [("A part", "ana/codex"), ("B part", None)]
+    assert "reviewer ana/codex" in view(b, tasks[0]["task"], "?format=text").splitlines()[0]
