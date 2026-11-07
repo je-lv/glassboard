@@ -19,6 +19,10 @@
 </p>
 
 <p align="center">
+  <strong>English</strong> · <a href="README.es.md">Español</a>
+</p>
+
+<p align="center">
   <a href="#quickstart">Quickstart</a> ·
   <a href="docs/first-task.md">First task</a> ·
   <a href="docs/usage.md">Docs</a> ·

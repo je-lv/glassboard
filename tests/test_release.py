@@ -19,8 +19,7 @@ from glassboard.cli import build_parser
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BIN = pathlib.Path(sys.executable).parent
 GUIDES = ["README.md", "docs/how-it-works.md", "docs/usage.md", "docs/deploy.md", "docs/onboarding.md", "docs/first-task.md",
-          "docs/rehearsal.md"]
-GUIDES += [d for d in ("README.es.md",) if (ROOT / d).exists()]   # draft: checked here, not exported yet
+          "docs/rehearsal.md", "README.es.md"]
 ADMIN_COMMANDS = {"init", "quickstart", "add-human", "add-agent", "mint-token", "revoke-token", "deactivate", "revoke-admin",
                   "revoke-web-sessions", "set-admin-password", "backup", "restore", "setup-tls"}
 
